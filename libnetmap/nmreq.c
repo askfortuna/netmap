@@ -18,19 +18,63 @@
 #endif /* NMREQ_DEBUG */
 
 static void
-nmreq_error_stderr(const char *errmsg)
+nmreq_ctx_error_stderr(const char *errmsg)
 {
 	fprintf(stderr, "%s\n", errmsg);
 }
 
 static void
-nmreq_error_ignore(const char *errmsg)
+nmreq_ctx_error_ignore(const char *errmsg)
 {
 	(void)errmsg;
 }
 
-typedef void (*nmreq_error_callback_t)(const char *);
-static nmreq_error_callback_t nmreq_error_callback = nmreq_error_stderr;
+typedef void (*nmreq_ctx_error_cb)(const char *);
+
+struct nmreq_ctx {
+	int netmap_fd;
+	int nopen;
+	nmreq_ctx_error_cb error;
+};
+
+void
+nmreq_ctx_init(struct nmreq_ctx *ctx)
+{
+	ctx->netmap_fd = -1;
+	ctx->nopen = 0;
+	ctx->error = nmreq_ctx_error_stderr;
+}
+
+static struct nmreq_ctx nmreq_ctx_global = {
+	.netmap_fd = -1,
+	.nopen = 0,
+	.error = nmreq_ctx_error_stderr,
+};
+
+int
+nmreq_ctx_getfd(struct nmreq_ctx *ctx)
+{
+	int fd;
+
+	if (ctx->nopen > 0)
+		return ctx->netmap_fd;
+	fd = open("/dev/netmap", O_RDONLY);
+	if (fd >= 0) {
+		ctx->netmap_fd = fd;
+		ctx->nopen++;
+	}
+	return fd;
+}
+
+void
+nmreq_ctx_putfd(struct nmreq_ctx *ctx)
+{
+	ctx->nopen--;
+	if (ctx->nopen == 0) {
+		close(ctx->netmap_fd);
+		ctx->netmap_fd = -1;
+	}
+}
 
 /* an identifier is a possibly empty sequence of alphanum characters and
  * underscores
@@ -47,16 +91,9 @@ nm_is_identifier(const char *s, const char *e)
 	return 1;
 }
 
-nmreq_error_callback_t nmreq_set_error_callback(nmreq_error_callback_t f)
-{
-	nmreq_error_callback_t old = nmreq_error_callback;
-	nmreq_error_callback = f;
-	return old;
-}
-
 #define MAXERRMSG 1000
 static void
-nmreq_ferror(const char *fmt, ...)
+nmreq_ferror(struct nmreq_ctx *ctx, const char *fmt, ...)
 {
 	char errmsg[MAXERRMSG];
 	va_list ap;
@@ -68,12 +105,12 @@ nmreq_ferror(const char *fmt, ...)
 
 	if (rv > 0) {
 		if (rv < MAXERRMSG) {
-			nmreq_error_callback(errmsg);
+			ctx->error(errmsg);
 		} else {
-			nmreq_error_callback("error message too long");
+			ctx->error("error message too long");
 		}
 	} else {
-		nmreq_error_callback("internal error");
+		ctx->error("internal error");
 	}
 }
 
@@ -85,7 +122,7 @@ nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
 }
 
 const char *
-nmreq_header_decode(const char *ifname, struct nmreq_header *h)
+nmreq_header_decode(const char *ifname, struct nmreq_header *h, struct nmreq_ctx *ctx)
 {
 	int is_vale;
 	const char *scan = NULL;
@@ -94,9 +131,11 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h)
 	u_int namelen;
 	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
 
+	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+
 	if (strncmp(ifname, "netmap:", 7) &&
 			strncmp(ifname, NM_BDG_NAME, NM_BDG_NAMSZ)) {
-		nmreq_ferror("invalid request '%s' (must begin with 'netmap:' or '" NM_BDG_NAME "')", ifname);
+		nmreq_ferror(ctx, "invalid request '%s' (must begin with 'netmap:' or '" NM_BDG_NAME "')", ifname);
 		goto fail;
 	}
 
@@ -104,12 +143,12 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h)
 	if (is_vale) {
 		scan = index(ifname, ':');
 		if (scan == NULL) {
-			nmreq_ferror("missing ':' in VALE name '%s'", ifname);
+			nmreq_ferror(ctx, "missing ':' in VALE name '%s'", ifname);
 			goto fail;
 		}
 
 		if (!nm_is_identifier(ifname + NM_BDG_NAMSZ, scan)) {
-			nmreq_ferror("invalid VALE bridge name '%.*s'",
+			nmreq_ferror(ctx, "invalid VALE bridge name '%.*s'",
 					(scan - ifname - NM_BDG_NAMSZ), ifname + NM_BDG_NAMSZ);
 			goto fail;
 		}
@@ -130,21 +169,21 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h)
 		;
 
 	if (!nm_is_identifier(vpname, pipesep)) {
-		nmreq_ferror("invalid %sport name '%.*s'", (is_vale ? "VALE " : ""),
+		nmreq_ferror(ctx, "invalid %sport name '%.*s'", (is_vale ? "VALE " : ""),
 				pipesep - vpname, vpname);
 		goto fail;
 	}
 	if (pipesep != scan) {
 		pipesep++;
 		if (!nm_is_identifier(pipesep, scan)) {
-			nmreq_ferror("invalid pipe name '%.*s'", scan - pipesep, pipesep);
+			nmreq_ferror(ctx, "invalid pipe name '%.*s'", scan - pipesep, pipesep);
 			goto fail;
 		}
 	}
 
 	namelen = scan - ifname;
 	if (namelen >= sizeof(h->nr_name)) {
-		nmreq_ferror("name '%.*s' too long", namelen, ifname);
+		nmreq_ferror(ctx, "name '%.*s' too long", namelen, ifname);
 		goto fail;
 	}
 
@@ -164,33 +203,35 @@ fail:
 
 static int
 nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
-		struct nmreq_register *r, struct nmreq_opt_extmem *e)
+		struct nmreq_register *r, struct nmreq_opt_extmem *e,
+		struct nmreq_ctx *ctx)
 {
 	int fd = -1;
 	struct nmreq_header gh;
 	struct nmreq_port_info_get gb;
 	off_t mapsize;
 	const char *rv;
-	nmreq_error_callback_t old;
+	struct nmreq_ctx nctx;
 	void *p;
 
 	if (mem_id == NULL)
 		return 0;
 
 	errno = 0;
+	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
 
 	/* first, try to look for a netmap port with this name */
-	fd = open("/dev/netmap", O_RDONLY);
+	fd = nmreq_ctx_getfd(ctx);
 	if (fd < 0) {
-		nmreq_ferror("cannot open /dev/netmap: %s", strerror(errno));
+		nmreq_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
-	old = nmreq_set_error_callback(nmreq_error_ignore);
-	rv = nmreq_header_decode(mem_id, &gh);
-	nmreq_set_error_callback(old);
+	nctx = *ctx;
+	nctx.error = nmreq_ctx_error_ignore;
+	rv = nmreq_header_decode(mem_id, &gh, &nctx);
 	if (rv != NULL) {
 		if (*rv != '\0') {
-			nmreq_ferror("unexpected characters '%s' in mem_id spec", rv);
+			nmreq_ferror(ctx, "unexpected characters '%s' in mem_id spec", rv);
 			goto fail;
 		}
 		gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
@@ -199,34 +240,34 @@ nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
 		if (ioctl(fd, NIOCCTRL, &gh) < 0) {
 			if (errno == ENOENT || errno == ENXIO)
 				goto try_external;
-			nmreq_ferror("cannot get info for '%s': %s", mem_id, strerror(errno));
+			nmreq_ferror(ctx, "cannot get info for '%s': %s", mem_id, strerror(errno));
 			goto fail;
 		}
 		r->nr_mem_id = gb.nr_mem_id;
-		close(fd);
+		nmreq_ctx_putfd(ctx);
 		return 0;
 	}
 
 try_external:
-	close(fd);
+	nmreq_ctx_putfd(ctx);
 	ED("trying with external memory");
 	if (e == NULL) {
-		nmreq_ferror("external memory request, but no option struct provided");
+		nmreq_ferror(ctx, "external memory request, but no option struct provided");
 		goto fail;
 	}
 	fd = open(mem_id, O_RDWR);
 	if (fd < 0) {
-		nmreq_ferror("cannot open '%s': %s", mem_id, strerror(errno));
+		nmreq_ferror(ctx, "cannot open '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
 	mapsize = lseek(fd, 0, SEEK_END);
 	if (mapsize < 0) {
-		nmreq_ferror("failed to obtain filesize of '%s': %s", mem_id, strerror(errno));
+		nmreq_ferror(ctx, "failed to obtain filesize of '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
 	p = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (p == MAP_FAILED) {
-		nmreq_ferror("cannot mmap '%s': %s", mem_id, strerror(errno));
+		nmreq_ferror(ctx, "cannot mmap '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
 	memset(e, 0, sizeof(*e));
@@ -239,7 +280,7 @@ try_external:
 
 fail:
 	if (fd >= 0)
-		close(fd);
+		nmreq_ctx_putfd(ctx);
 	if (!errno)
 		errno = EINVAL;
 	return -1;
@@ -247,14 +288,17 @@ fail:
 
 int
 nmreq_register_decode(const char *ifname, struct nmreq_header *h,
-		struct nmreq_register *r, struct nmreq_opt_extmem *e)
+		struct nmreq_register *r, struct nmreq_opt_extmem *e,
+		struct nmreq_ctx *ctx)
 {
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
 	long num;
 	const char *scan;
 	int memid_allowed = 1;
 
-	scan = nmreq_header_decode(ifname, h);
+	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+
+	scan = nmreq_header_decode(ifname, h, ctx);
 	if (scan == NULL)
 		goto fail;
 
@@ -288,7 +332,7 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 				p_state = P_MEMID;
 				break;
 			default:
-				nmreq_ferror("unknown modifier: '%c'", *scan);
+				nmreq_ferror(ctx, "unknown modifier: '%c'", *scan);
 				goto fail;
 			}
 			scan++;
@@ -302,19 +346,19 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 				p_state = P_MEMID;
 				break;
 			default:
-				nmreq_ferror("unexpected character: '%c'", *scan);
+				nmreq_ferror(ctx, "unexpected character: '%c'", *scan);
 				goto fail;
 			}
 			scan++;
 			break;
 		case P_GETNUM:
 			if (!isdigit(*scan)) {
-				nmreq_ferror("got '%s' while expecting a number", scan);
+				nmreq_ferror(ctx, "got '%s' while expecting a number", scan);
 				goto fail;
 			}
 			num = strtol(scan, (char **)&scan, 10);
 			if (num < 0 || num >= NETMAP_RING_MASK) {
-				nmreq_ferror("'%ld' out of range [0, %d)",
+				nmreq_ferror(ctx, "'%ld' out of range [0, %d)",
 						num, NETMAP_RING_MASK);
 				goto fail;
 			}
@@ -348,7 +392,7 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 				r->nr_flags |= NR_TX_RINGS_ONLY;
 				break;
 			default:
-				nmreq_ferror("unrecognized flag: '%c'", *scan);
+				nmreq_ferror(ctx, "unrecognized flag: '%c'", *scan);
 				goto fail;
 			}
 			scan++;
@@ -356,7 +400,7 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 			break;
 		case P_MEMID:
 			if (!memid_allowed) {
-				nmreq_ferror("double setting of mem_id");
+				nmreq_ferror(ctx, "double setting of mem_id");
 				goto fail;
 			}
 			if (isdigit(*scan)) {
@@ -366,7 +410,7 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 				p_state = P_RNGSFXOK;
 			} else {
 				ED("non-numeric mem_id '%s'", scan);
-				if (nmreq_mem_id_parse(scan, h, r, e) < 0)
+				if (nmreq_mem_id_parse(scan, h, r, e, ctx) < 0)
 					goto fail;
 				goto out;
 			}
@@ -375,7 +419,7 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 	}
 	if (p_state != P_START && p_state != P_RNGSFXOK &&
 	    p_state != P_FLAGSOK && p_state != P_MEMID) {
-		nmreq_ferror("unexpected end of request");
+		nmreq_ferror(ctx, "unexpected end of request");
 		goto fail;
 	}
 out:
@@ -408,7 +452,7 @@ main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (nmreq_register_decode(argv[1], &h, &r, &e) < 0) {
+	if (nmreq_register_decode(argv[1], &h, &r, &e, NULL) < 0) {
 		perror("nmreq");
 		return 1;
 	}
