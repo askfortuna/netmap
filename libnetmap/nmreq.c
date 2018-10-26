@@ -121,8 +121,8 @@ nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
 	h->nr_options = (uintptr_t)o;
 }
 
-const char *
-nmreq_header_decode(const char *ifname, struct nmreq_header *h, struct nmreq_ctx *ctx)
+int
+nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmreq_ctx *ctx)
 {
 	int is_vale;
 	const char *scan = NULL;
@@ -130,6 +130,7 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h, struct nmreq_ctx
 	const char *pipesep = NULL;
 	u_int namelen;
 	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
+	const char *ifname = *pifname;
 
 	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
 
@@ -194,33 +195,38 @@ nmreq_header_decode(const char *ifname, struct nmreq_header *h, struct nmreq_ctx
 	h->nr_name[namelen] = '\0';
 	ED("name %s", h->nr_name);
 
-	return scan;
+	*pifname = scan;
+	return 0;
 fail:
 	errno = EINVAL;
-	return NULL;
+	return -1;
 }
 
 
-static int
-nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
-		struct nmreq_register *r, struct nmreq_opt_extmem *e,
-		struct nmreq_ctx *ctx)
+/*
+ * 0 not recognized
+ * -1 error
+ *  >= 0 mem_id
+ */
+int
+nmreq_get_mem_id(const char **pifname, struct nmreq_ctx *ctx)
 {
 	int fd = -1;
 	struct nmreq_header gh;
 	struct nmreq_port_info_get gb;
-	off_t mapsize;
-	const char *rv;
+	const char *ifname;
 	struct nmreq_ctx nctx;
-	void *p;
-
-	if (mem_id == NULL)
-		return 0;
+	int error = -1;
 
 	errno = 0;
+	ifname = *pifname;
+
+	if (ifname == NULL)
+		goto fail;
+
 	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
 
-	/* first, try to look for a netmap port with this name */
+	/* try to look for a netmap port with this name */
 	fd = nmreq_ctx_getfd(ctx);
 	if (fd < 0) {
 		nmreq_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
@@ -228,33 +234,45 @@ nmreq_mem_id_parse(const char *mem_id, struct nmreq_header *h,
 	}
 	nctx = *ctx;
 	nctx.error = nmreq_ctx_error_ignore;
-	rv = nmreq_header_decode(mem_id, &gh, &nctx);
-	if (rv != NULL) {
-		if (*rv != '\0') {
-			nmreq_ferror(ctx, "unexpected characters '%s' in mem_id spec", rv);
-			goto fail;
-		}
-		gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
-		memset(&gb, 0, sizeof(gb));
-		gh.nr_body = (uintptr_t)&gb;
-		if (ioctl(fd, NIOCCTRL, &gh) < 0) {
-			if (errno == ENOENT || errno == ENXIO)
-				goto try_external;
-			nmreq_ferror(ctx, "cannot get info for '%s': %s", mem_id, strerror(errno));
-			goto fail;
-		}
-		r->nr_mem_id = gb.nr_mem_id;
-		nmreq_ctx_putfd(ctx);
-		return 0;
-	}
-
-try_external:
-	nmreq_ctx_putfd(ctx);
-	ED("trying with external memory");
-	if (e == NULL) {
-		nmreq_ferror(ctx, "external memory request, but no option struct provided");
+	if (nmreq_header_decode(&ifname, &gh, &nctx) < 0) {
+		error = 0; /* not recognized */
 		goto fail;
 	}
+	gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
+	memset(&gb, 0, sizeof(gb));
+	gh.nr_body = (uintptr_t)&gb;
+	if (ioctl(fd, NIOCCTRL, &gh) < 0) {
+		if (errno == ENOENT || errno == ENXIO) {
+			error = 0;
+			goto fail;
+		}
+		nmreq_ferror(ctx, "cannot get info for '%s': %s", ifname, strerror(errno));
+		goto fail;
+	}
+	*pifname = ifname;
+	nmreq_ctx_putfd(ctx);
+	return gb.nr_mem_id;
+
+fail:
+	if (fd >= 0)
+		nmreq_ctx_putfd(ctx);
+	if (!errno)
+		errno = EINVAL;
+	return error;
+}
+
+
+int
+nmreq_opt_extmem_decode(const char **spec, struct nmreq_opt_extmem *e, struct nmreq_ctx *ctx)
+{
+	int fd;
+	off_t mapsize;
+	void *p;
+	const char *mem_id = *spec;
+
+	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+
+	ED("trying with external memory");
 	fd = open(mem_id, O_RDWR);
 	if (fd < 0) {
 		nmreq_ferror(ctx, "cannot open '%s': %s", mem_id, strerror(errno));
@@ -274,35 +292,24 @@ try_external:
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
 	e->nro_usrptr = (uintptr_t)p;
 	e->nro_info.nr_memsize = mapsize;
-	nmreq_push_option(h, &e->nro_opt);
 	ED("mapped %zu bytes at %p from file %s", mapsize, pi, mem_id);
+	*spec = mem_id + strlen(mem_id);
 	return 0;
-
 fail:
-	if (fd >= 0)
-		nmreq_ctx_putfd(ctx);
-	if (!errno)
-		errno = EINVAL;
+	if (fd > 0)
+		close(fd);
 	return -1;
 }
 
 int
-nmreq_register_decode(const char *ifname, struct nmreq_header *h,
-		struct nmreq_register *r, struct nmreq_opt_extmem *e,
-		struct nmreq_ctx *ctx)
+nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmreq_ctx *ctx)
 {
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
 	long num;
-	const char *scan;
+	const char *scan = *pifname;
 	int memid_allowed = 1;
 
 	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
-
-	scan = nmreq_header_decode(ifname, h, ctx);
-	if (scan == NULL)
-		goto fail;
-
-	h->nr_body = (uintptr_t)r;
 
 	/* fill the request */
 	memset(r, 0, sizeof(*r));
@@ -410,8 +417,21 @@ nmreq_register_decode(const char *ifname, struct nmreq_header *h,
 				p_state = P_RNGSFXOK;
 			} else {
 				ED("non-numeric mem_id '%s'", scan);
-				if (nmreq_mem_id_parse(scan, h, r, e, ctx) < 0)
+				num = nmreq_get_mem_id(&scan, ctx);
+				switch (num) {
+				case -1:
 					goto fail;
+				case 0:
+					scan--;
+					goto out;
+				default:
+					break;
+				}
+				if (*scan != '\0') {
+					nmreq_ferror(ctx, "unexpected characters '%s' in mem_id spec", scan);
+					goto fail;
+				}
+				r->nr_mem_id = num;
 				goto out;
 			}
 			break;
@@ -430,6 +450,7 @@ out:
 			(r->nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "",
 			(r->nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
 			(r->nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
+	*pifname = scan;
 	return 0;
 
 fail:
@@ -446,15 +467,37 @@ main(int argc, char *argv[])
 	struct nmreq_header h;
 	struct nmreq_register r;
 	struct nmreq_opt_extmem e;
+	const char *scan;
 
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s netmap-expr\n", argv[0]);
 		return 1;
 	}
 
-	if (nmreq_register_decode(argv[1], &h, &r, &e, NULL) < 0) {
-		perror("nmreq");
+	scan = argv[1];
+
+	if (nmreq_header_decode(&scan, &h, NULL) < 0) {
+		perror("nmreq_header_decode");
 		return 1;
+	}
+
+
+	if (nmreq_register_decode(&scan, &r, NULL) < 0) {
+		perror("nmreq_register_decode");
+		return 1;
+	}
+
+	h.nr_reqtype = NETMAP_REQ_REGISTER;
+	h.nr_body = (uintptr_t)&r;
+
+	if (*scan == '@') {
+		/* try with extmem */
+		scan++;
+		if (nmreq_opt_extmem_decode(&scan, &e, NULL) < 0) {
+			perror("nmreq_opt_extmem_decode");
+			return 1;
+		}
+		nmreq_push_option(&h, &e.nro_opt);
 	}
 
 	printf("header:\n");
@@ -471,11 +514,13 @@ main(int argc, char *argv[])
 	printf("   nr_mode:     %lx\n", (unsigned long)r.nr_mode);
 	printf("   nr_flags:    %lx\n", (unsigned long)r.nr_flags);
 	printf("\n");
-	printf("opt_extmem (%p):\n", &e);
-	printf("   nro_opt.nro_next:    %lx\n", (unsigned long)e.nro_opt.nro_next);
-	printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e.nro_opt.nro_reqtype);
-	printf("   nro_usrptr:          %lx\n", (unsigned long)e.nro_usrptr);
-	printf("   nro_info.nr_memsize  %"PRIu64"\n", e.nro_info.nr_memsize);
+	if (h.nr_options) {
+		printf("opt_extmem (%p):\n", &e);
+		printf("   nro_opt.nro_next:    %lx\n", (unsigned long)e.nro_opt.nro_next);
+		printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e.nro_opt.nro_reqtype);
+		printf("   nro_usrptr:          %lx\n", (unsigned long)e.nro_usrptr);
+		printf("   nro_info.nr_memsize  %"PRIu64"\n", e.nro_info.nr_memsize);
+	}
 	return 0;
 }
 #endif
