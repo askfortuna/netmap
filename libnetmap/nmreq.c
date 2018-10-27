@@ -17,25 +17,23 @@
 #define ED(...)
 #endif /* NMREQ_DEBUG */
 
-static void
-nmreq_ctx_error_stderr(const char *errmsg)
-{
-	fprintf(stderr, "%s\n", errmsg);
-}
-
-static void
-nmreq_ctx_error_ignore(const char *errmsg)
-{
-	(void)errmsg;
-}
-
-typedef void (*nmreq_ctx_error_cb)(const char *);
+struct nmreq_ctx;
+typedef void (*nmreq_ctx_error_cb)(struct nmreq_ctx *, const char *);
 
 struct nmreq_ctx {
 	int netmap_fd;
 	int nopen;
+
+	int verbose;
 	nmreq_ctx_error_cb error;
 };
+
+static void
+nmreq_ctx_error_stderr(struct nmreq_ctx *ctx, const char *errmsg)
+{
+	if (ctx->verbose > 0)
+		fprintf(stderr, "%s\n", errmsg);
+}
 
 void
 nmreq_ctx_init(struct nmreq_ctx *ctx)
@@ -105,12 +103,12 @@ nmreq_ferror(struct nmreq_ctx *ctx, const char *fmt, ...)
 
 	if (rv > 0) {
 		if (rv < MAXERRMSG) {
-			ctx->error(errmsg);
+			ctx->error(ctx, errmsg);
 		} else {
-			ctx->error("error message too long");
+			ctx->error(ctx, "error message too long");
 		}
 	} else {
-		ctx->error("internal error");
+		ctx->error(ctx, "internal error");
 	}
 }
 
@@ -215,8 +213,8 @@ nmreq_get_mem_id(const char **pifname, struct nmreq_ctx *ctx)
 	struct nmreq_header gh;
 	struct nmreq_port_info_get gb;
 	const char *ifname;
-	struct nmreq_ctx nctx;
 	int error = -1;
+	int old_verbose;
 
 	errno = 0;
 	ifname = *pifname;
@@ -232,12 +230,13 @@ nmreq_get_mem_id(const char **pifname, struct nmreq_ctx *ctx)
 		nmreq_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
-	nctx = *ctx;
-	nctx.error = nmreq_ctx_error_ignore;
-	if (nmreq_header_decode(&ifname, &gh, &nctx) < 0) {
+	old_verbose = ctx->verbose;
+	ctx->verbose = 0; /* silence errors */
+	if (nmreq_header_decode(&ifname, &gh, ctx) < 0) {
 		error = 0; /* not recognized */
 		goto fail;
 	}
+	ctx->verbose = old_verbose;
 	gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 	memset(&gb, 0, sizeof(gb));
 	gh.nr_body = (uintptr_t)&gb;
