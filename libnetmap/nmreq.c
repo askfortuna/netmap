@@ -26,7 +26,18 @@ struct nmreq_ctx {
 
 	int verbose;
 	nmreq_ctx_error_cb error;
+
+	void (*get)(struct nmreq_ctx *);
+	void (*put)(struct nmreq_ctx *);
 };
+
+struct nmreq_open_d {
+	struct nmreq_ctx *ctx;
+	struct nmreq_header hdr;
+	struct nmreq_register reg;
+	struct nmreq_option *opts;
+	void *mem;
+}:
 
 static void
 nmreq_ctx_error_stderr(struct nmreq_ctx *ctx, const char *errmsg)
@@ -41,6 +52,8 @@ nmreq_ctx_init(struct nmreq_ctx *ctx)
 	ctx->netmap_fd = -1;
 	ctx->nopen = 0;
 	ctx->error = nmreq_ctx_error_stderr;
+	ctx->get = NULL;
+	ctx->put = NULL;
 }
 
 static struct nmreq_ctx nmreq_ctx_global = {
@@ -49,29 +62,53 @@ static struct nmreq_ctx nmreq_ctx_global = {
 	.error = nmreq_ctx_error_stderr,
 };
 
+struct nmreq_ctx *
+nmreq_ctx_get(struct nmreq_ctx *ctx)
+{
+	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+	if (ctx->get != NULL)
+		ctx->get(ctx);
+	return ctx;
+}
+
+void
+nmreq_ctx_put(struct nmreq_ctx *ctx)
+{
+	if (ctx != NULL && ctx->put != NULL)
+		ctx->put(ctx);
+}
+
 int
 nmreq_ctx_getfd(struct nmreq_ctx *ctx)
 {
 	int fd;
 
-	if (ctx->nopen > 0)
-		return ctx->netmap_fd;
-	fd = open("/dev/netmap", O_RDONLY);
-	if (fd >= 0) {
-		ctx->netmap_fd = fd;
-		ctx->nopen++;
+	ctx = nmreq_ctx_get(ctx);
+
+	if (!ctx->nopen) {
+		ctx->netmap_fd = open("/dev/netmap", O_RDONLY);
 	}
+	fd = ctx->netmap_fd;
+	if (fd >= 0)
+		ctx->nopen++;
+
+	nmreq_ctx_put(ctx);
+
 	return fd;
 }
 
 void
 nmreq_ctx_putfd(struct nmreq_ctx *ctx)
 {
+	ctx = nmreq_ctx_get(ctx);
+
 	ctx->nopen--;
 	if (ctx->nopen == 0) {
 		close(ctx->netmap_fd);
 		ctx->netmap_fd = -1;
 	}
+
+	nmreq_ctx_put(ctx);
 }
 
 /* an identifier is a possibly empty sequence of alphanum characters and
@@ -130,7 +167,7 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmreq_c
 	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
 	const char *ifname = *pifname;
 
-	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+	ctx = nmreq_ctx_get(ctx);
 
 	if (strncmp(ifname, "netmap:", 7) &&
 			strncmp(ifname, NM_BDG_NAME, NM_BDG_NAMSZ)) {
@@ -194,9 +231,13 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmreq_c
 	ED("name %s", h->nr_name);
 
 	*pifname = scan;
+
+	nmreq_ctx_put(ctx);
+
 	return 0;
 fail:
 	errno = EINVAL;
+	nmreq_ctx_put(ctx);
 	return -1;
 }
 
@@ -219,10 +260,10 @@ nmreq_get_mem_id(const char **pifname, struct nmreq_ctx *ctx)
 	errno = 0;
 	ifname = *pifname;
 
+	ctx = nmreq_ctx_get(ctx);
+
 	if (ifname == NULL)
 		goto fail;
-
-	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
 
 	/* try to look for a netmap port with this name */
 	fd = nmreq_ctx_getfd(ctx);
@@ -250,6 +291,7 @@ nmreq_get_mem_id(const char **pifname, struct nmreq_ctx *ctx)
 	}
 	*pifname = ifname;
 	nmreq_ctx_putfd(ctx);
+	nmreq_ctx_put(ctx);
 	return gb.nr_mem_id;
 
 fail:
@@ -257,6 +299,7 @@ fail:
 		nmreq_ctx_putfd(ctx);
 	if (!errno)
 		errno = EINVAL;
+	nmreq_ctx_put(ctx);
 	return error;
 }
 
@@ -269,7 +312,7 @@ nmreq_opt_extmem_decode(const char **spec, struct nmreq_opt_extmem *e, struct nm
 	void *p;
 	const char *mem_id = *spec;
 
-	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+	ctx = nmreq_ctx_get(ctx);
 
 	ED("trying with external memory");
 	fd = open(mem_id, O_RDWR);
@@ -293,10 +336,12 @@ nmreq_opt_extmem_decode(const char **spec, struct nmreq_opt_extmem *e, struct nm
 	e->nro_info.nr_memsize = mapsize;
 	ED("mapped %zu bytes at %p from file %s", mapsize, pi, mem_id);
 	*spec = mem_id + strlen(mem_id);
+	nmreq_ctx_put(ctx);
 	return 0;
 fail:
 	if (fd > 0)
 		close(fd);
+	nmreq_ctx_put(ctx);
 	return -1;
 }
 
@@ -308,7 +353,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmr
 	const char *scan = *pifname;
 	int memid_allowed = 1;
 
-	ctx = (ctx == NULL ? &nmreq_ctx_global : ctx);
+	ctx = nmreq_ctx_get(ctx);
 
 	/* fill the request */
 	memset(r, 0, sizeof(*r));
@@ -450,11 +495,13 @@ out:
 			(r->nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
 			(r->nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
 	*pifname = scan;
+	nmreq_ctx_put(ctx);
 	return 0;
 
 fail:
 	if (!errno)
 		errno = EINVAL;
+	nmreq_ctx_put(ctx);
 	return -1;
 }
 
