@@ -18,6 +18,9 @@
 #endif /* NMREQ_DEBUG */
 
 struct nmreq_ctx;
+struct nmreq_open_d;
+struct nmreq_mem_d;
+
 typedef void (*nmreq_ctx_error_cb)(struct nmreq_ctx *, const char *);
 
 struct nmreq_ctx {
@@ -29,6 +32,18 @@ struct nmreq_ctx {
 
 	void (*get)(struct nmreq_ctx *);
 	void (*put)(struct nmreq_ctx *);
+
+	struct nmreq_mem_d  *mem_descs;
+};
+
+struct nmreq_mem_d {
+	uint16_t mem_id;
+	int refcount;
+	void *mem;
+	size_t size;
+
+	struct nmreq_mem_d *next;
+	struct nmreq_mem_d *prev;
 };
 
 struct nmreq_open_d {
@@ -36,8 +51,13 @@ struct nmreq_open_d {
 	struct nmreq_header hdr;
 	struct nmreq_register reg;
 	struct nmreq_option *opts;
-	void *mem;
-}:
+
+	struct nmreq_open_d *next;
+	struct nmreq_open_d *prev;
+
+	int netmap_fd;
+	struct nmreq_mem_d *mem;
+};
 
 static void
 nmreq_ctx_error_stderr(struct nmreq_ctx *ctx, const char *errmsg)
@@ -59,6 +79,7 @@ nmreq_ctx_init(struct nmreq_ctx *ctx)
 static struct nmreq_ctx nmreq_ctx_global = {
 	.netmap_fd = -1,
 	.nopen = 0,
+	.verbose = 1,
 	.error = nmreq_ctx_error_stderr,
 };
 
@@ -299,6 +320,7 @@ fail:
 		nmreq_ctx_putfd(ctx);
 	if (!errno)
 		errno = EINVAL;
+	ctx->verbose = old_verbose;
 	nmreq_ctx_put(ctx);
 	return error;
 }
@@ -505,68 +527,208 @@ fail:
 	return -1;
 }
 
+static void
+nmreq_free_options(struct nmreq_header *h)
+{
+	struct nmreq_option *o, *next;
+
+	for (o = (struct nmreq_option *)h->nr_options; o != NULL; o = next)
+	{
+		next = (struct nmreq_option *)o->nro_next;
+		free(o);
+	}
+}
+
+struct nmreq_open_d *
+nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
+{
+	struct nmreq_open_d *d = NULL;
+	const char *scan = ifname;
+	struct nmreq_mem_d *m;
+
+	ctx = nmreq_ctx_get(ctx);
+
+	/* allocate a descriptor */
+	d = malloc(sizeof(*d));
+	if (d == NULL) {
+		nmreq_ferror(ctx, "cannot allocate nmreq descriptor");
+		goto err_put;
+	}
+	memset(d, 0, sizeof(*d));
+
+	/* parse the header */
+	if (nmreq_header_decode(&scan, &d->hdr, ctx) < 0) {
+		goto err_free;
+	}
+
+	/* specialize the header */
+	d->hdr.nr_reqtype = NETMAP_REQ_REGISTER;
+	d->hdr.nr_body = (uintptr_t)&d->reg;
+
+	/* parse the register request */
+	if (nmreq_register_decode(&scan, &d->reg, ctx) < 0) {
+		goto err_free;
+	}
+
+	/* parse the options, if any */
+	while (*scan) {
+		const char optc = *scan++;
+		switch (optc) {
+		case '@': {
+			/* we only understand the extmem option for now */
+			struct nmreq_opt_extmem *e;
+
+			e = malloc(sizeof(*e));
+			if (e == NULL) {
+				nmreq_ferror(ctx, "cannot allocate extmem option");
+				goto err_free;
+			}
+			memset(e, 0, sizeof(*e));
+			nmreq_push_option(&d->hdr, &e->nro_opt);
+			if (nmreq_opt_extmem_decode(&scan, e, NULL) < 0) {
+				goto err_free_opts;
+			}
+			break;
+		}
+
+		default:
+			nmreq_ferror(ctx, "unexpected characters: '%c%s'", optc, scan);
+			goto err_free_opts;
+		}
+	}
+
+	/* open netmap and register */
+	d->netmap_fd = open("/dev/netmap", O_RDWR);
+	if (d->netmap_fd < 0) {
+		nmreq_ferror(ctx, "/dev/netmap: %s", strerror(errno));
+		goto err_free_opts;
+	}
+
+	if (ioctl(d->netmap_fd, NIOCCTRL, &d->hdr) < 0) {
+		nmreq_ferror(ctx, "%s: %s", ifname, strerror(errno));
+		goto err_close;
+	}
+
+	/* lookup the mem_id in the mem-list: do a new mmap() if
+	 * not found, reuse existing otherwise
+	 */
+
+	for (m = ctx->mem_descs; m != NULL; m = m->next)
+		if (m->mem_id == d->reg.nr_mem_id)
+			break;
+	if (m == NULL) {
+		m = malloc(sizeof(*m));
+		if (m == NULL) {
+			nmreq_ferror(ctx, "cannot allocate memory descriptor");
+			goto err_close;
+		}
+		memset(m, 0, sizeof(*m));
+		m->mem = mmap(NULL, d->reg.nr_memsize, PROT_READ|PROT_WRITE,
+				MAP_SHARED, d->netmap_fd, 0);
+		if (m->mem == MAP_FAILED) {
+			nmreq_ferror(ctx, "mmap: %s", strerror(errno));
+			goto err_free_mem;
+		}
+		m->mem_id = d->reg.nr_mem_id;
+		m->size = d->reg.nr_memsize;
+		m->next = ctx->mem_descs;
+		if (ctx->mem_descs != NULL)
+			ctx->mem_descs->prev = m;
+		ctx->mem_descs = m;
+	}
+	m->refcount++;
+	d->mem = m;
+
+	nmreq_ctx_put(ctx);
+	return d;
+
+err_free_mem:
+	free(m);
+err_close:
+	close(d->netmap_fd);
+err_free_opts:
+	nmreq_free_options(&d->hdr);
+err_free:
+	free(d);
+err_put:
+	nmreq_ctx_put(ctx);
+	return NULL;
+}
+
+void
+nmreq_close(struct nmreq_open_d *d, struct nmreq_ctx *ctx)
+{
+	struct nmreq_mem_d *m;
+
+	ctx = nmreq_ctx_get(ctx);
+
+	m = d->mem;
+	m->refcount--;
+	if (m->refcount <= 0) {
+		munmap(m->mem, m->size);
+		/* extract from the list and free */
+		if (m->next != NULL)
+			m->next->prev = m->prev;
+		if (m->prev != NULL)
+			m->prev->next = m->next;
+		else
+			ctx->mem_descs = m->next;
+		free(m);
+	}
+
+	close(d->netmap_fd);
+	free(d);
+
+	nmreq_ctx_put(ctx);
+}
+
 #if 1
 #include <inttypes.h>
+static void
+nmreq_dump(struct nmreq_open_d *d)
+{
+	printf("header:\n");
+	printf("   nr_version:  %"PRIu16"\n", d->hdr.nr_version);
+	printf("   nr_reqtype:  %"PRIu16"\n", d->hdr.nr_reqtype);
+	printf("   nr_reserved: %"PRIu32"\n", d->hdr.nr_reserved);
+	printf("   nr_name:     %s\n", d->hdr.nr_name);
+	printf("   nr_options:  %lx\n", (unsigned long)d->hdr.nr_options);
+	printf("   nr_body:     %lx\n", (unsigned long)d->hdr.nr_body);
+	printf("\n");
+	printf("register (%p):\n", (void *)d->hdr.nr_body);
+	printf("   nr_mem_id:   %"PRIu16"\n", d->reg.nr_mem_id);
+	printf("   nr_ringid:   %"PRIu16"\n", d->reg.nr_ringid);
+	printf("   nr_mode:     %lx\n", (unsigned long)d->reg.nr_mode);
+	printf("   nr_flags:    %lx\n", (unsigned long)d->reg.nr_flags);
+	printf("\n");
+	if (d->hdr.nr_options) {
+		struct nmreq_opt_extmem *e = (struct nmreq_opt_extmem *)d->hdr.nr_options;
+		printf("opt_extmem (%p):\n", e);
+		printf("   nro_opt.nro_next:    %lx\n", (unsigned long)e->nro_opt.nro_next);
+		printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e->nro_opt.nro_reqtype);
+		printf("   nro_usrptr:          %lx\n", (unsigned long)e->nro_usrptr);
+		printf("   nro_info.nr_memsize  %"PRIu64"\n", e->nro_info.nr_memsize);
+	}
+	printf("mem (%p):\n", d->mem);
+	printf("   refcount:   %d\n", d->mem->refcount);
+	printf("   mem:        %p\n", d->mem->mem);
+	printf("   size:       %zu\n", d->mem->size);
+}
 int
 main(int argc, char *argv[])
 {
-	struct nmreq_header h;
-	struct nmreq_register r;
-	struct nmreq_opt_extmem e;
-	const char *scan;
+	struct nmreq_open_d *d;
 
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s netmap-expr\n", argv[0]);
 		return 1;
 	}
 
-	scan = argv[1];
-
-	if (nmreq_header_decode(&scan, &h, NULL) < 0) {
-		perror("nmreq_header_decode");
-		return 1;
+	d = nmreq_open(argv[1], NULL);
+	if (d != NULL) {
+		nmreq_dump(d);
 	}
 
-
-	if (nmreq_register_decode(&scan, &r, NULL) < 0) {
-		perror("nmreq_register_decode");
-		return 1;
-	}
-
-	h.nr_reqtype = NETMAP_REQ_REGISTER;
-	h.nr_body = (uintptr_t)&r;
-
-	if (*scan == '@') {
-		/* try with extmem */
-		scan++;
-		if (nmreq_opt_extmem_decode(&scan, &e, NULL) < 0) {
-			perror("nmreq_opt_extmem_decode");
-			return 1;
-		}
-		nmreq_push_option(&h, &e.nro_opt);
-	}
-
-	printf("header:\n");
-	printf("   nr_version:  %"PRIu16"\n", h.nr_version);
-	printf("   nr_reqtype:  %"PRIu16"\n", h.nr_reqtype);
-	printf("   nr_reserved: %"PRIu32"\n", h.nr_reserved);
-	printf("   nr_name:     %s\n", h.nr_name);
-	printf("   nr_options:  %lx\n", (unsigned long)h.nr_options);
-	printf("   nr_body:     %lx\n", (unsigned long)h.nr_body);
-	printf("\n");
-	printf("register (%p):\n", &r);
-	printf("   nr_mem_id:   %"PRIu16"\n", r.nr_mem_id);
-	printf("   nr_ringid:   %"PRIu16"\n", r.nr_ringid);
-	printf("   nr_mode:     %lx\n", (unsigned long)r.nr_mode);
-	printf("   nr_flags:    %lx\n", (unsigned long)r.nr_flags);
-	printf("\n");
-	if (h.nr_options) {
-		printf("opt_extmem (%p):\n", &e);
-		printf("   nro_opt.nro_next:    %lx\n", (unsigned long)e.nro_opt.nro_next);
-		printf("   nro_opt.nro_reqtype: %"PRIu32"\n", e.nro_opt.nro_reqtype);
-		printf("   nro_usrptr:          %lx\n", (unsigned long)e.nro_usrptr);
-		printf("   nro_info.nr_memsize  %"PRIu64"\n", e.nro_info.nr_memsize);
-	}
 	return 0;
 }
 #endif
