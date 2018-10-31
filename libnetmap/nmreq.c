@@ -544,7 +544,8 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 {
 	struct nmreq_open_d *d = NULL;
 	const char *scan = ifname;
-	struct nmreq_mem_d *m;
+	struct nmreq_mem_d *m = NULL;
+	struct nmreq_opt_extmem *e = NULL;
 
 	ctx = nmreq_ctx_get(ctx);
 
@@ -576,8 +577,6 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 		switch (optc) {
 		case '@': {
 			/* we only understand the extmem option for now */
-			struct nmreq_opt_extmem *e;
-
 			e = malloc(sizeof(*e));
 			if (e == NULL) {
 				nmreq_ferror(ctx, "cannot allocate extmem option");
@@ -585,7 +584,7 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 			}
 			memset(e, 0, sizeof(*e));
 			nmreq_push_option(&d->hdr, &e->nro_opt);
-			if (nmreq_opt_extmem_decode(&scan, e, NULL) < 0) {
+			if (nmreq_opt_extmem_decode(&scan, e, ctx) < 0) {
 				goto err_free_opts;
 			}
 			break;
@@ -613,9 +612,11 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 	 * not found, reuse existing otherwise
 	 */
 
-	for (m = ctx->mem_descs; m != NULL; m = m->next)
-		if (m->mem_id == d->reg.nr_mem_id)
-			break;
+	if (e == NULL) {
+		for (m = ctx->mem_descs; m != NULL; m = m->next)
+			if (m->mem_id == d->reg.nr_mem_id)
+				break;
+	}
 	if (m == NULL) {
 		m = malloc(sizeof(*m));
 		if (m == NULL) {
@@ -623,14 +624,19 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 			goto err_close;
 		}
 		memset(m, 0, sizeof(*m));
-		m->mem = mmap(NULL, d->reg.nr_memsize, PROT_READ|PROT_WRITE,
-				MAP_SHARED, d->netmap_fd, 0);
-		if (m->mem == MAP_FAILED) {
-			nmreq_ferror(ctx, "mmap: %s", strerror(errno));
-			goto err_free_mem;
+		if (e == NULL) {
+			m->mem = mmap(NULL, d->reg.nr_memsize, PROT_READ|PROT_WRITE,
+					MAP_SHARED, d->netmap_fd, 0);
+			if (m->mem == MAP_FAILED) {
+				nmreq_ferror(ctx, "mmap: %s", strerror(errno));
+				goto err_free_mem;
+			}
+			m->size = d->reg.nr_memsize;
+		} else {
+			m->mem = (void *)e->nro_usrptr;
+			m->size = e->nro_info.nr_memsize;
 		}
 		m->mem_id = d->reg.nr_mem_id;
-		m->size = d->reg.nr_memsize;
 		m->next = ctx->mem_descs;
 		if (ctx->mem_descs != NULL)
 			ctx->mem_descs->prev = m;
@@ -709,6 +715,7 @@ nmreq_dump(struct nmreq_open_d *d)
 		printf("   nro_usrptr:          %lx\n", (unsigned long)e->nro_usrptr);
 		printf("   nro_info.nr_memsize  %"PRIu64"\n", e->nro_info.nr_memsize);
 	}
+	printf("\n");
 	printf("mem (%p):\n", d->mem);
 	printf("   refcount:   %d\n", d->mem->refcount);
 	printf("   mem:        %p\n", d->mem->mem);
