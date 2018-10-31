@@ -57,6 +57,11 @@ struct nmreq_open_d {
 
 	int netmap_fd;
 	struct nmreq_mem_d *mem;
+	struct netmap_if *nifp;
+	u_int first_tx_ring;
+	u_int last_tx_ring;
+	u_int first_rx_ring;
+	u_int last_rx_ring;
 };
 
 static void
@@ -546,6 +551,8 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 	const char *scan = ifname;
 	struct nmreq_mem_d *m = NULL;
 	struct nmreq_opt_extmem *e = NULL;
+	int i;
+	u_int num_tx, num_rx;
 
 	ctx = nmreq_ctx_get(ctx);
 
@@ -645,6 +652,23 @@ nmreq_open(const char *ifname, struct nmreq_ctx *ctx)
 	m->refcount++;
 	d->mem = m;
 
+	d->nifp = NETMAP_IF(m->mem, d->reg.nr_offset);
+
+	num_tx = d->reg.nr_tx_rings + 1; /* XXX fix for multiple host rings */
+	for (i = 0; i < num_tx && !d->nifp->ring_ofs[i]; i++)
+		;
+	d->first_tx_ring = i;
+	for ( ; i < num_tx && d->nifp->ring_ofs[i]; i++)
+		;
+	d->last_tx_ring = i - 1;
+	for (i = 0; i < num_tx && !d->nifp->ring_ofs[i + num_tx]; i++)
+		;
+	d->first_rx_ring = i;
+	num_rx = d->reg.nr_rx_rings + 1; /* XXX fix for multiple host rings */
+	for ( ; i < num_rx && d->nifp->ring_ofs[i + num_tx]; i++)
+		;
+	d->last_rx_ring = i - 1;
+
 	nmreq_ctx_put(ctx);
 	return d;
 
@@ -720,6 +744,10 @@ nmreq_dump(struct nmreq_open_d *d)
 	printf("   refcount:   %d\n", d->mem->refcount);
 	printf("   mem:        %p\n", d->mem->mem);
 	printf("   size:       %zu\n", d->mem->size);
+	printf("\n");
+	printf("rings:\n");
+	printf("   tx:   [%d, %d]\n", d->first_tx_ring, d->last_tx_ring);
+	printf("   rx:   [%d, %d]\n", d->first_rx_ring, d->last_rx_ring);
 }
 int
 main(int argc, char *argv[])
