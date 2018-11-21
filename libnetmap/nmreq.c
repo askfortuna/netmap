@@ -398,7 +398,7 @@ nmreq_free_options(struct nmreq_header *h)
 	}
 }
 
-#if 1
+#if 0
 #include <inttypes.h>
 static void
 nmreq_dump(struct nmport_d *d)

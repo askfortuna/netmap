@@ -75,7 +75,7 @@ endef
 .PHONY: $(foreach d,$(E_DRIVERS),build-$(d) clean-$(1) install-$(1)) netmap.ko
 
 
-all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%) apps utils
+all: $(S_DRIVERS:%=get-%) netmap.ko $(E_DRIVERS:%=build-%) libnetmap apps utils
 
 netmap.ko:
 	$(MAKE) $(COMMON_OPTS) CONFIG_NETMAP=m $(MOD_LIST) O_DRIVERS="$(patsubst %.c,%.o,$(filter-out $(DRIVERS_EXT),$(DRIVERS)))" NETMAP_DRIVER_SUFFIX=$(DRVSUFFIX)
@@ -111,7 +111,7 @@ DESTDIR?=@DESTDIR@
 APPS_BUILD=$(APPS_LIST:%=build-app-%)
 APPS_INSTALL=$(APPS_LIST:%=install-app-%)
 
-apps: $(APPS_BUILD)
+apps: libnetmap $(APPS_BUILD)
 install-apps: $(APPS_INSTALL)
 clean-apps: $(APPS_LIST:%=clean-app-%)
 
@@ -130,6 +130,9 @@ $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 
 +%:
 	@echo '$($*)'
+
+libnetmap:
+	+$(MAKE) -C build-libnetmap SRCDIR="$(SRCDIR)/.." CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 ifeq (,$(UTILS))
 utils:

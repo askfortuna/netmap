@@ -1,7 +1,12 @@
-CFLAGS=-g
-nmreq: nmreq.o nmport.o nmctx.o
+CFLAGS=-O2
+VPATH = $(SRCDIR)/libnetmap
 
-.PHONY: clean
+libnetmap.a: nmreq.o nmport.o nmctx.o
+	$(AR) r $@ $^
+
+.PHONY: clean distclean
 clean:
 	rm -f *.o
-	rm nmreq
+
+distclean: clean
+	rm -f libnetmap.a
