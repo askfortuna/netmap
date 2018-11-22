@@ -13,34 +13,82 @@
 #include "libnetmap.h"
 
 struct nmport_d *
-nmport_new(struct nmctx *ctx)
+nmport_new(void)
 {
-	struct nmport_d *d = NULL;
+	struct nmctx *ctx = nmctx_get();
+	return nmport_new_with_ctx(ctx);
+}
+
+struct nmport_d *
+nmport_new_with_ctx(struct nmctx *ctx)
+{
+	struct nmport_d *d;
 
 	/* allocate a descriptor */
-	d = malloc(sizeof(*d));
+	d = nmctx_malloc(ctx, sizeof(*d));
 	if (d == NULL) {
-		nmctx_ferror(ctx, "cannot allocate nmreq descriptor");
+		nmctx_ferror(ctx, "cannot allocate nmport descriptor");
 		goto out;
 	}
 	memset(d, 0, sizeof(*d));
+	d->ctx = ctx;
+	d->netmap_fd = -1;
 
 out:
 	return d;
 }
 
 void
-nmport_delete(struct nmport_d *d, struct nmctx *ctx)
+nmport_delete(struct nmport_d *d)
 {
-	free(d);
+	nmctx_free(d->ctx, d);
 }
 
 int
-nmport_parse(struct nmport_d *d, const char *ifname, struct nmctx *ctx)
+nmport_extmem_from_file(struct nmport_d *d, const char **scan)
+{
+	struct nmctx *ctx = d->ctx;
+
+	d->extmem = nmctx_malloc(ctx, sizeof(*d->extmem));
+	if (d->extmem == NULL) {
+		nmctx_ferror(ctx, "cannot allocate extmem option");
+		goto err;
+	}
+	memset(d->extmem, 0, sizeof(*d->extmem));
+	nmreq_push_option(&d->hdr, &d->extmem->nro_opt);
+	if (nmreq_opt_extmem_decode(scan, d->extmem, d->ctx) < 0) {
+		goto err;
+	}
+
+	return 0;
+
+err:
+	nmport_undo_extmem(d);
+	return -1;
+}
+
+void
+nmport_undo_extmem(struct nmport_d *d)
+{
+	void *p;
+
+	if (d->extmem == NULL)
+		return;
+
+	p = (void *)d->extmem->nro_usrptr;
+	if (p != MAP_FAILED)
+		munmap(p, d->extmem->nro_info.nr_memsize);
+	nmreq_remove_option(&d->hdr, &d->extmem->nro_opt);
+	nmctx_free(d->ctx, d->extmem);
+	d->extmem = NULL;
+}
+
+int
+nmport_parse(struct nmport_d *d, const char *ifname)
 {
 	const char *scan = ifname;
 
-	if (nmreq_header_decode(&scan, &d->hdr, ctx) < 0) {
+	if (nmreq_header_decode(&scan, &d->hdr, d->ctx) < 0) {
 		goto err;
 	}
 
@@ -49,7 +97,7 @@ nmport_parse(struct nmport_d *d, const char *ifname, struct nmctx *ctx)
 	d->hdr.nr_body = (uintptr_t)&d->reg;
 
 	/* parse the register request */
-	if (nmreq_register_decode(&scan, &d->reg, ctx) < 0) {
+	if (nmreq_register_decode(&scan, &d->reg, d->ctx) < 0) {
 		goto err;
 	}
 
@@ -57,39 +105,69 @@ nmport_parse(struct nmport_d *d, const char *ifname, struct nmctx *ctx)
 	while (*scan) {
 		const char optc = *scan++;
 		switch (optc) {
-		case '@': {
-			struct nmreq_opt_extmem *e;
+		case '@':
 			/* we only understand the extmem option for now */
-			e = malloc(sizeof(*e));
-			if (e == NULL) {
-				nmctx_ferror(ctx, "cannot allocate extmem option");
+			if (nmport_extmem_from_file(d, &scan) < 0)
 				goto err;
-			}
-			memset(e, 0, sizeof(*e));
-			nmreq_push_option(&d->hdr, &e->nro_opt);
-			if (nmreq_opt_extmem_decode(&scan, e, ctx) < 0) {
-				goto err_free_opts;
-			}
 			break;
-		}
 
 		default:
-			nmctx_ferror(ctx, "unexpected characters: '%c%s'", optc, scan);
-			goto err_free_opts;
+			nmctx_ferror(d->ctx, "unexpected characters: '%c%s'",
+					optc, scan);
+			goto err;
 		}
 	}
 
 	return 0;
 
-err_free_opts:
-	nmreq_free_options(&d->hdr);
 err:
+	nmport_undo_parse(d);
 	return -1;
 }
 
-int
-nmport_register(struct nmport_d *d, struct nmctx *ctx)
+void
+nmport_undo_parse(struct nmport_d *d)
 {
+	nmport_undo_extmem(d);
+	memset(&d->reg, 0, sizeof(d->reg));
+	memset(&d->hdr, 0, sizeof(d->hdr));
+}
+
+struct nmport_d *
+nmport_prepare(const char *ifname)
+{
+	struct nmport_d *d;
+
+	/* allocate a descriptor */
+	d = nmport_new();
+	if (d == NULL)
+		goto err;
+
+	/* parse the header */
+	if (nmport_parse(d, ifname) < 0)
+		goto err;
+
+	return d;
+
+err:
+	nmport_undo_prepare(d);
+	return NULL;
+}
+
+void
+nmport_undo_prepare(struct nmport_d *d)
+{
+	if (d == NULL)
+		return;
+	nmport_undo_parse(d);
+	nmport_delete(d);
+}
+
+int
+nmport_register(struct nmport_d *d)
+{
+	struct nmctx *ctx = d->ctx;
+
 	if (d->register_done) {
 		errno = EINVAL;
 		nmctx_ferror(ctx, "%s: already registered", d->hdr.nr_name);
@@ -104,26 +182,37 @@ nmport_register(struct nmport_d *d, struct nmctx *ctx)
 
 	if (ioctl(d->netmap_fd, NIOCCTRL, &d->hdr) < 0) {
 		nmctx_ferror(ctx, "%s: %s", d->hdr.nr_name, strerror(errno));
-		goto err_close;
+		if (d->extmem != NULL && d->extmem->nro_opt.nro_status) {
+			nmctx_ferror(ctx, "failed to allocate extmem: %s",
+					strerror(d->extmem->nro_opt.nro_status));
+		}
+		goto err;
 	}
 
-	d->extmem =(struct nmreq_opt_extmem *)nmreq_find_option(&d->hdr,
-			NETMAP_REQ_OPT_EXTMEM);
-	if (d->extmem != NULL && d->extmem->nro_opt.nro_status)
-		d->extmem = NULL;
 	d->register_done = 1;
 
 	return 0;
 
-err_close:
-	close(d->netmap_fd);
 err:
+	nmport_undo_register(d);
 	return -1;
 }
 
-int
-nmport_mmap(struct nmport_d *d, struct nmctx *ctx)
+void
+nmport_undo_register(struct nmport_d *d)
 {
+	if (d->netmap_fd >= 0)
+		close(d->netmap_fd);
+	d->register_done = 0;
+}
+
+/* lookup the mem_id in the mem-list: do a new mmap() if
+ * not found, reuse existing otherwise
+ */
+int
+nmport_mmap(struct nmport_d *d)
+{
+	struct nmctx *ctx = d->ctx;
 	struct nmem_d *m = NULL;
 	u_int num_tx, num_rx;
 	int i;
@@ -131,23 +220,23 @@ nmport_mmap(struct nmport_d *d, struct nmctx *ctx)
 	if (d->mmap_done) {
 		errno = EINVAL;
 		nmctx_ferror(ctx, "%s: already mapped", d->hdr.nr_name);
-		goto err;
+		return -1;
 	}
 
 	if (!d->register_done) {
 		errno = EINVAL;
 		nmctx_ferror(ctx, "cannot map unregistered port");
-		goto err;
+		return -1;
 	}
 
-	// lock
+	nmctx_lock(ctx);
 
 	for (m = ctx->mem_descs; m != NULL; m = m->next)
 		if (m->mem_id == d->reg.nr_mem_id)
 			break;
 
 	if (m == NULL) {
-		m = malloc(sizeof(*m));
+		m = nmctx_malloc(ctx, sizeof(*m));
 		if (m == NULL) {
 			nmctx_ferror(ctx, "cannot allocate memory descriptor");
 			goto err;
@@ -162,7 +251,7 @@ nmport_mmap(struct nmport_d *d, struct nmctx *ctx)
 					MAP_SHARED, d->netmap_fd, 0);
 			if (m->mem == MAP_FAILED) {
 				nmctx_ferror(ctx, "mmap: %s", strerror(errno));
-				goto err_free;
+				goto err;
 			}
 			m->size = d->reg.nr_memsize;
 		}
@@ -174,7 +263,7 @@ nmport_mmap(struct nmport_d *d, struct nmctx *ctx)
 	}
 	m->refcount++;
 
-	// unlock
+	nmctx_unlock(ctx);
 
 	d->mem = m;
 
@@ -199,82 +288,89 @@ nmport_mmap(struct nmport_d *d, struct nmctx *ctx)
 
 	return 0;
 
-err_free:
-	// unlock
-	free(m);
 err:
+	nmctx_unlock(ctx);
+	nmport_undo_mmap(d);
 	return -1;
+}
+
+void
+nmport_undo_mmap(struct nmport_d *d)
+{
+	struct nmem_d *m;
+	struct nmctx *ctx = d->ctx;
+
+	m = d->mem;
+	if (m == NULL)
+		return;
+	nmctx_lock(ctx);
+	m->refcount--;
+	if (m->refcount <= 0) {
+		if (!m->is_extmem && m->mem != MAP_FAILED)
+			munmap(m->mem, m->size);
+		/* extract from the list and free */
+		if (m->next != NULL)
+			m->next->prev = m->prev;
+		if (m->prev != NULL)
+			m->prev->next = m->next;
+		else
+			ctx->mem_descs = m->next;
+		nmctx_free(ctx, m);
+		d->mem = NULL;
+	}
+	nmctx_unlock(ctx);
+	d->mmap_done = 0;
+}
+
+int
+nmport_complete(struct nmport_d *d)
+{
+	if (nmport_register(d) < 0)
+		goto err;
+
+	if (nmport_mmap(d) < 0)
+		goto err;
+
+	return 0;
+err:
+	nmport_undo_complete(d);
+	return -1;
+}
+
+void
+nmport_undo_complete(struct nmport_d *d)
+{
+	nmport_undo_mmap(d);
+	nmport_undo_register(d);
 }
 
 
 struct nmport_d *
 nmport_open(const char *ifname)
 {
-	struct nmport_d *d = NULL;
-	struct nmctx *ctx;
+	struct nmport_d *d;
 
-	ctx = nmctx_get();
-
-	/* allocate a descriptor */
-	d = nmport_new(ctx);
+	/* prepare the descriptor */
+	d = nmport_prepare(ifname);
 	if (d == NULL)
 		goto err;
 
-	/* parse the header */
-	if (nmport_parse(d, ifname, ctx) < 0)
-		goto err;
-
 	/* open netmap and register */
-	if (nmport_register(d, ctx) < 0)
+	if (nmport_complete(d) < 0)
 		goto err;
 
-	/* lookup the mem_id in the mem-list: do a new mmap() if
-	 * not found, reuse existing otherwise
-	 */
-	if (nmport_mmap(d, ctx) < 0)
-		goto err;
-
-	nmctx_put(ctx);
 	return d;
 
 err:
-	nmctx_put(ctx);
-	if (d != NULL)
-		nmport_close(d);
+	nmport_close(d);
 	return NULL;
 }
 
 void
 nmport_close(struct nmport_d *d)
 {
-	struct nmem_d *m;
-	struct nmctx *ctx;
-
-	ctx = nmctx_get();
-
-	if (d->mmap_done) {
-		m = d->mem;
-		// lock
-		m->refcount--;
-		if (m->refcount <= 0) {
-			if (!m->is_extmem)
-				munmap(m->mem, m->size);
-			/* extract from the list and free */
-			if (m->next != NULL)
-				m->next->prev = m->prev;
-			if (m->prev != NULL)
-				m->prev->next = m->next;
-			else
-				ctx->mem_descs = m->next;
-			free(m);
-		}
-		// unlock
-	}
-
-	if (d->register_done)
-		close(d->netmap_fd);
-	nmreq_free_options(&d->hdr);
-	free(d);
-
-	nmctx_put(ctx);
+	if (d == NULL)
+		return;
+	nmport_undo_complete(d);
+	nmport_undo_prepare(d);
 }

@@ -143,7 +143,7 @@ nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 		goto fail;
 
 	/* try to look for a netmap port with this name */
-	fd = nmctx_getfd(ctx);
+	fd = open("/dev/netmap", O_RDWR);
 	if (fd < 0) {
 		nmctx_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
@@ -167,12 +167,12 @@ nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 		goto fail;
 	}
 	*pifname = ifname;
-	nmctx_putfd(ctx);
+	close(fd);
 	return gb.nr_mem_id;
 
 fail:
 	if (fd >= 0)
-		nmctx_putfd(ctx);
+		close(fd);
 	if (!errno)
 		errno = EINVAL;
 	ctx->verbose = old_verbose;
@@ -199,18 +199,17 @@ nmreq_opt_extmem_decode(const char **spec, struct nmreq_opt_extmem *e, struct nm
 		nmctx_ferror(ctx, "failed to obtain filesize of '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
+	memset(e, 0, sizeof(*e));
 	p = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	e->nro_usrptr = (uintptr_t)p;
 	if (p == MAP_FAILED) {
 		nmctx_ferror(ctx, "cannot mmap '%s': %s", mem_id, strerror(errno));
 		goto fail;
 	}
-	memset(e, 0, sizeof(*e));
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
-	e->nro_usrptr = (uintptr_t)p;
 	e->nro_info.nr_memsize = mapsize;
 	ED("mapped %zu bytes at %p from file %s", mapsize, pi, mem_id);
 	*spec = mem_id + strlen(mem_id);
-	nmctx_put(ctx);
 	return 0;
 fail:
 	if (fd > 0)

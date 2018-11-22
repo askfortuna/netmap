@@ -13,68 +13,37 @@
 #include "libnetmap.h"
 
 static void
-nmctx_error_stderr(struct nmctx *ctx, const char *errmsg)
+nmctx_default_error(struct nmctx *ctx, const char *errmsg)
 {
-	if (ctx->verbose > 0)
-		fprintf(stderr, "%s\n", errmsg);
+	fprintf(stderr, "%s\n", errmsg);
 }
 
-void
-nmctx_init(struct nmctx *ctx)
+static void *
+nmctx_default_malloc(struct nmctx *ctx, size_t sz)
 {
-	ctx->netmap_fd = -1;
-	ctx->nopen = 0;
-	ctx->error = nmctx_error_stderr;
-	ctx->get = NULL;
-	ctx->put = NULL;
+	(void *)ctx;
+	return malloc(sz);
+}
+
+static void
+nmctx_default_free(struct nmctx *ctx, void *p)
+{
+	(void *)ctx;
+	free(p);
 }
 
 static struct nmctx nmctx_global = {
-	.netmap_fd = -1,
-	.nopen = 0,
 	.verbose = 1,
-	.error = nmctx_error_stderr,
+	.error = nmctx_default_error,
+	.malloc = nmctx_default_malloc,
+	.free = nmctx_default_free,
+	.lock = NULL,
 };
 
 struct nmctx *
 nmctx_get(void)
 {
-	struct nmctx *ctx = &nmctx_global;
-	if (ctx->get != NULL)
-		ctx->get(ctx);
-	return ctx;
-}
-
-void
-nmctx_put(struct nmctx *ctx)
-{
-	if (ctx != NULL && ctx->put != NULL)
-		ctx->put(ctx);
-}
-
-int
-nmctx_getfd(struct nmctx *ctx)
-{
-	int fd;
-
-	if (!ctx->nopen) {
-		ctx->netmap_fd = open("/dev/netmap", O_RDONLY);
-	}
-	fd = ctx->netmap_fd;
-	if (fd >= 0)
-		ctx->nopen++;
-
-	return fd;
-}
-
-void
-nmctx_putfd(struct nmctx *ctx)
-{
-	ctx->nopen--;
-	if (ctx->nopen == 0) {
-		close(ctx->netmap_fd);
-		ctx->netmap_fd = -1;
-	}
+	return &nmctx_global;
 }
 
 #define MAXERRMSG 1000
@@ -84,6 +53,9 @@ nmctx_ferror(struct nmctx *ctx, const char *fmt, ...)
 	char errmsg[MAXERRMSG];
 	va_list ap;
 	int rv;
+
+	if (!ctx->verbose)
+		return;
 
 	va_start(ap, fmt);
 	rv = vsnprintf(errmsg, MAXERRMSG, fmt, ap);
@@ -98,4 +70,30 @@ nmctx_ferror(struct nmctx *ctx, const char *fmt, ...)
 	} else {
 		ctx->error(ctx, "internal error");
 	}
+}
+
+void *
+nmctx_malloc(struct nmctx *ctx, size_t sz)
+{
+	return ctx->malloc(ctx, sz);
+}
+
+void
+nmctx_free(struct nmctx *ctx, void *p)
+{
+	ctx->free(ctx, p);
+}
+
+void
+nmctx_lock(struct nmctx *ctx)
+{
+	if (ctx->lock != NULL)
+		ctx->lock(ctx, 1);
+}
+
+void
+nmctx_unlock(struct nmctx *ctx)
+{
+	if (ctx->lock != NULL)
+		ctx->lock(ctx, 0);
 }
