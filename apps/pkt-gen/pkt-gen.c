@@ -41,6 +41,7 @@
 #include <stdio.h>
 #define NETMAP_WITH_LIBS
 #include <net/netmap_user.h>
+#include <libnetmap.h>
 
 
 #include <ctype.h>	// isprint()
@@ -289,7 +290,7 @@ struct glob_arg {
 
 	int affinity;
 	int main_fd;
-	struct nm_desc *nmd;
+	struct nmport_d *nmd;
 	int report_interval;		/* milliseconds between prints */
 	void *(*td_body)(void *);
 	int td_type;
@@ -323,7 +324,7 @@ struct targ {
 	int completed;
 	int cancel;
 	int fd;
-	struct nm_desc *nmd;
+	struct nmport_d *nmd;
 	/* these ought to be volatile, but they are
 	 * only sampled and errors should not accumulate
 	 */
@@ -621,7 +622,7 @@ system_ncpus(void)
  * and #rx-rings.
  */
 int
-parse_nmr_config(const char* conf, struct nmreq *nmr)
+parse_nmr_config(const char* conf, struct nmreq_register *nmr)
 {
 	char *w, *tok;
 	int i, v;
@@ -1109,20 +1110,22 @@ initialize_packet(struct targ *targ)
 static void
 get_vnet_hdr_len(struct glob_arg *g)
 {
-	struct nmreq req;
+	struct nmreq_header hdr;
+	struct nmreq_port_hdr ph;
 	int err;
 
-	memset(&req, 0, sizeof(req));
-	bcopy(g->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
-	req.nr_version = NETMAP_API;
-	req.nr_cmd = NETMAP_VNET_HDR_GET;
-	err = ioctl(g->main_fd, NIOCREGIF, &req);
+	hdr = g->nmd->hdr; /* copy name and version */
+	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_GET;
+	hdr.nr_options = 0;
+	memset(&ph, 0, sizeof(ph));
+	hdr.nr_body = (uintptr_t)&ph;
+	err = ioctl(g->main_fd, NIOCCTRL, &hdr);
 	if (err) {
 		D("Unable to get virtio-net header length");
 		return;
 	}
 
-	g->virt_header = req.nr_arg1;
+	g->virt_header = ph.nr_hdr_len;
 	if (g->virt_header) {
 		D("Port requires virtio-net header, length = %d",
 		  g->virt_header);
@@ -1133,17 +1136,18 @@ static void
 set_vnet_hdr_len(struct glob_arg *g)
 {
 	int err, l = g->virt_header;
-	struct nmreq req;
+	struct nmreq_header hdr;
+	struct nmreq_port_hdr ph;
 
 	if (l == 0)
 		return;
 
-	memset(&req, 0, sizeof(req));
-	bcopy(g->nmd->req.nr_name, req.nr_name, sizeof(req.nr_name));
-	req.nr_version = NETMAP_API;
-	req.nr_cmd = NETMAP_BDG_VNET_HDR;
-	req.nr_arg1 = l;
-	err = ioctl(g->main_fd, NIOCREGIF, &req);
+	hdr = g->nmd->hdr; /* copy name and version */
+	hdr.nr_reqtype = NETMAP_REQ_PORT_HDR_SET;
+	hdr.nr_options = 0;
+	memset(&ph, 0, sizeof(ph));
+	hdr.nr_body = (uintptr_t)&ph;
+	err = ioctl(g->main_fd, NIOCCTRL, &hdr);
 	if (err) {
 		D("Unable to set virtio-net header length %d", l);
 	}
@@ -2501,30 +2505,22 @@ start_threads(struct glob_arg *g) {
 		memcpy(t->seed, &seed, sizeof(t->seed));
 
 		if (g->dev_type == DEV_NETMAP) {
-			struct nm_desc nmd = *g->nmd; /* copy, we overwrite ringid */
-			uint64_t nmd_flags = 0;
-			nmd.self = &nmd;
-
 			if (i > 0) {
 				/* the first thread uses the fd opened by the main
 				 * thread, the other threads re-open /dev/netmap
 				 */
-				if (g->nthreads > 1) {
-					nmd.req.nr_flags =
-						g->nmd->req.nr_flags & ~NR_REG_MASK;
-					nmd.req.nr_flags |= NR_REG_ONE_NIC;
-					nmd.req.nr_ringid = i;
-				}
+				t->nmd = nmport_clone(g->nmd);
+				if (t->nmd == NULL)
+					continue;
+				t->nmd->reg.nr_ringid = i & NETMAP_RING_MASK;
 				/* Only touch one of the rings (rx is already ok) */
 				if (g->td_type == TD_TYPE_RECEIVER)
-					nmd_flags |= NETMAP_NO_TX_POLL;
+					t->nmd->reg.nr_flags |= NETMAP_NO_TX_POLL;
 
 				/* register interface. Override ifname and ringid etc. */
-				t->nmd = nm_open(t->g->ifname, NULL, nmd_flags |
-						NM_OPEN_IFNAME | NM_OPEN_NO_MMAP, &nmd);
-				if (t->nmd == NULL) {
-					D("Unable to open %s: %s",
-							t->g->ifname, strerror(errno));
+				if (nmport_complete(t->nmd) < 0) {
+					nmport_undo_prepare(t->nmd);
+					t->nmd = NULL;
 					continue;
 				}
 			} else {
@@ -2656,7 +2652,7 @@ main_thread(struct glob_arg *g)
 		if (targs[i].used)
 			pthread_join(targs[i].thread, NULL); /* blocking */
 		if (g->dev_type == DEV_NETMAP) {
-			nm_close(targs[i].nmd);
+			nmport_close(targs[i].nmd);
 			targs[i].nmd = NULL;
 		} else {
 			close(targs[i].fd);
@@ -3078,20 +3074,13 @@ main(int arc, char **argv)
     } else if (g.dummy_send) { /* but DEV_NETMAP */
 	D("using a dummy send routine");
     } else {
-	struct nm_desc base_nmd;
-	char errmsg[MAXERRMSG];
-	u_int flags;
-
-	bzero(&base_nmd, sizeof(base_nmd));
-
-	parse_nmr_config(g.nmr_config, &base_nmd.req);
-
-	base_nmd.req.nr_flags |= NR_ACCEPT_VNET_HDR;
-
-	if (nm_parse(g.ifname, &base_nmd, errmsg) < 0) {
-		D("Invalid name '%s': %s", g.ifname, errmsg);
+	g.nmd = nmport_prepare(g.ifname);
+	if (g.nmd == NULL)
 		goto out;
-	}
+
+	parse_nmr_config(g.nmr_config, &g.nmd->reg);
+
+	g.nmd->reg.nr_flags |= NR_ACCEPT_VNET_HDR;
 
 	/*
 	 * Open the netmap device using nm_open().
@@ -3100,20 +3089,14 @@ main(int arc, char **argv)
 	 * which in turn may take some time for the PHY to
 	 * reconfigure. We do the open here to have time to reset.
 	 */
-	flags = NM_OPEN_IFNAME | NM_OPEN_ARG1 | NM_OPEN_ARG2 |
-		NM_OPEN_ARG3 | NM_OPEN_RING_CFG;
 	if (g.nthreads > 1) {
-		base_nmd.req.nr_flags &= ~NR_REG_MASK;
-		base_nmd.req.nr_flags |= NR_REG_ONE_NIC;
-		base_nmd.req.nr_ringid = 0;
+		g.nmd->reg.nr_mode = NR_REG_ONE_NIC;
+		g.nmd->reg.nr_ringid = 0;
 	}
-	g.nmd = nm_open(g.ifname, NULL, flags, &base_nmd);
-	if (g.nmd == NULL) {
-		D("Unable to open %s: %s", g.ifname, strerror(errno));
+	if (nmport_complete(g.nmd) < 0)
 		goto out;
-	}
 	g.main_fd = g.nmd->fd;
-	D("mapped %luKB at %p", (unsigned long)(g.nmd->req.nr_memsize>>10),
+	ND("mapped %luKB at %p", (unsigned long)(g.nmd->req.nr_memsize>>10),
 				g.nmd->mem);
 
 	if (g.virt_header) {
@@ -3128,9 +3111,9 @@ main(int arc, char **argv)
 
 	/* get num of queues in tx or rx */
 	if (g.td_type == TD_TYPE_SENDER)
-		devqueues = g.nmd->req.nr_tx_rings;
+		devqueues = g.nmd->reg.nr_tx_rings;
 	else
-		devqueues = g.nmd->req.nr_rx_rings;
+		devqueues = g.nmd->reg.nr_rx_rings;
 
 	/* validate provided nthreads. */
 	if (g.nthreads < 1 || g.nthreads > devqueues) {
@@ -3150,11 +3133,11 @@ main(int arc, char **argv)
 
 	if (verbose) {
 		struct netmap_if *nifp = g.nmd->nifp;
-		struct nmreq *req = &g.nmd->req;
+		struct nmreq_register *req = &g.nmd->reg;
 
-		D("nifp at offset %d, %d tx %d rx region %d",
+		D("nifp at offset %"PRIu64", %d tx %d rx region %d",
 		    req->nr_offset, req->nr_tx_rings, req->nr_rx_rings,
-		    req->nr_arg2);
+		    req->nr_mem_id);
 		for (i = 0; i <= req->nr_tx_rings; i++) {
 			struct netmap_ring *ring = NETMAP_TXRING(nifp, i);
 			D("   TX%d at 0x%p slots %d", i,
