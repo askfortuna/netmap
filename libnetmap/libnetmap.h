@@ -66,6 +66,7 @@ void nmctx_unlock(struct nmctx *);
 void nmreq_push_option(struct nmreq_header *, struct nmreq_option *);
 void nmreq_remove_option(struct nmreq_header *, struct nmreq_option *);
 struct nmreq_option *nmreq_find_option(struct nmreq_header *, uint32_t);
+int nmmreq_clone_options(struct nmreq_header *, struct nmreq_header *);
 int nmreq_header_decode(const char **, struct nmreq_header *, struct nmctx *);
 int nmreq_get_mem_id(const char **, struct nmctx *);
 int nmreq_opt_extmem_decode(const char **, struct nmreq_opt_extmem *, struct nmctx *);
@@ -76,6 +77,7 @@ int nmreq_register_decode(const char **, struct nmreq_register *, struct nmctx *
 /* highest level */
 struct nmport_d * nmport_open(const char *);
 void nmport_close(struct nmport_d *);
+struct nmport_d *nmport_clone(struct nmport_d *);
 
 /* middle level */
 struct nmport_d *nmport_prepare(const char *);

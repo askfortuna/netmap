@@ -374,3 +374,40 @@ nmport_close(struct nmport_d *d)
 	nmport_undo_complete(d);
 	nmport_undo_prepare(d);
 }
+
+struct nmport_d *
+nmport_clone(struct nmport_d *d)
+{
+	struct nmport_d *c;
+	struct nmctx *ctx;
+
+	ctx = d->ctx;
+
+	if (d->extmem != NULL && !d->register_done) {
+		errno = EINVAL;
+		nmctx_ferror(ctx, "cannot clone unregistered port that is using extmem");
+		return NULL;
+	}
+
+	c = nmport_new_with_ctx(ctx);
+	if (c == NULL)
+		return NULL;
+	/* copy the output of parse */
+	c->hdr = d->hdr;
+	/* options are not cloned */
+	c->hdr.nr_options = 0;
+	c->reg = d->reg; /* this also copies the mem_id */
+	/* put the new port in an un-registered, unmapped state */
+	c->fd = -1;
+	c->nifp = NULL;
+	c->register_done = 0;
+	c->mem = NULL;
+	c->extmem = NULL;
+	c->mmap_done = 0;
+	c->first_tx_ring = 0;
+	c->last_tx_ring = 0;
+	c->first_rx_ring = 0;
+	c->last_rx_ring = 0;
+
+	return c;
+}
