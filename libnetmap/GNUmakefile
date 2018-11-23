@@ -1,6 +1,6 @@
-CFLAGS=-O2
+CFLAGS=-g
 VPATH = $(SRCDIR)/libnetmap
-SRCS=$(wildcard $(SRCDIR)/libnetmap/*.c)
+SRCS=$(notdir $(wildcard $(SRCDIR)/libnetmap/*.c))
 OBJS=$(SRCS:.c=.o)
 
 all: libnetmap.a
