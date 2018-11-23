@@ -2485,7 +2485,7 @@ usage(int errcode)
 	exit(errcode);
 }
 
-static void
+static int
 start_threads(struct glob_arg *g) {
 	int i;
 
@@ -2511,7 +2511,7 @@ start_threads(struct glob_arg *g) {
 				 */
 				t->nmd = nmport_clone(g->nmd);
 				if (t->nmd == NULL)
-					continue;
+					return -1;
 				t->nmd->reg.nr_ringid = i & NETMAP_RING_MASK;
 				/* Only touch one of the rings (rx is already ok) */
 				if (g->td_type == TD_TYPE_RECEIVER)
@@ -2521,7 +2521,7 @@ start_threads(struct glob_arg *g) {
 				if (nmport_complete(t->nmd) < 0) {
 					nmport_undo_prepare(t->nmd);
 					t->nmd = NULL;
-					continue;
+					return -1;
 				}
 			} else {
 				t->nmd = g->nmd;
@@ -2553,6 +2553,7 @@ start_threads(struct glob_arg *g) {
 			t->used = 0;
 		}
 	}
+	return 0;
 }
 
 static void
@@ -3213,7 +3214,8 @@ out:
 	if (pthread_sigmask(SIG_BLOCK, &ss, NULL) < 0) {
 		D("failed to block SIGINT: %s", strerror(errno));
 	}
-	start_threads(&g);
+	if (start_threads(&g) < 0)
+		return 1;
 	/* Install the handler and re-enable SIGINT for the main thread */
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sigint_h;
