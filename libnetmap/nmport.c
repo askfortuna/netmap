@@ -12,6 +12,28 @@
 #include <net/netmap_user.h>
 #include "libnetmap.h"
 
+static inline void
+nm_pkt_copy(const void *_src, void *_dst, int l)
+{
+	const uint64_t *src = (const uint64_t *)_src;
+	uint64_t *dst = (uint64_t *)_dst;
+
+	if (unlikely(l >= 1024 || l % 64)) {
+		memcpy(dst, src, l);
+		return;
+	}
+	for (; likely(l > 0); l-=64) {
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+	}
+}
+
 struct nmport_d *
 nmport_new(void)
 {
@@ -412,4 +434,47 @@ nmport_clone(struct nmport_d *d)
 	c->last_rx_ring = 0;
 
 	return c;
+}
+
+int
+nmport_inject(struct nmport_d *d, const void *buf, size_t size)
+{
+	u_int c, n = d->last_tx_ring - d->first_tx_ring + 1,
+		ri = d->cur_tx_ring;
+
+	for (c = 0; c < n ; c++, ri++) {
+		/* compute current ring to use */
+		struct netmap_ring *ring;
+		uint32_t i, j, idx;
+		size_t rem;
+
+		if (ri > d->last_tx_ring)
+			ri = d->first_tx_ring;
+		ring = NETMAP_TXRING(d->nifp, ri);
+		rem = size;
+		j = ring->cur;
+		while (rem > ring->nr_buf_size && j != ring->tail) {
+			rem -= ring->nr_buf_size;
+			j = nm_ring_next(ring, j);
+		}
+		if (j == ring->tail && rem > 0)
+			continue;
+		i = ring->cur;
+		while (i != j) {
+			idx = ring->slot[i].buf_idx;
+			ring->slot[i].len = ring->nr_buf_size;
+			ring->slot[i].flags = NS_MOREFRAG;
+			nm_pkt_copy(buf, NETMAP_BUF(ring, idx), ring->nr_buf_size);
+			i = nm_ring_next(ring, i);
+			buf = (char *)buf + ring->nr_buf_size;
+		}
+		idx = ring->slot[i].buf_idx;
+		ring->slot[i].len = rem;
+		ring->slot[i].flags = 0;
+		nm_pkt_copy(buf, NETMAP_BUF(ring, idx), rem);
+		ring->head = ring->cur = nm_ring_next(ring, i);
+		d->cur_tx_ring = ri;
+		return size;
+	}
+	return 0; /* fail */
 }

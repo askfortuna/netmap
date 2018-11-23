@@ -80,6 +80,7 @@ int nmreq_register_decode(const char **, struct nmreq_register *, struct nmctx *
 struct nmport_d * nmport_open(const char *);
 void nmport_close(struct nmport_d *);
 struct nmport_d *nmport_clone(struct nmport_d *);
+int nmport_inject(struct nmport_d *d, const void *buf, size_t size);
 
 /* middle level */
 struct nmport_d *nmport_prepare(const char *);

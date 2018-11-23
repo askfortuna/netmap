@@ -1,4 +1,4 @@
-CFLAGS=-g
+CFLAGS=-O2 -pipe
 CFLAGS += -I $(SRCDIR)/sys
 VPATH = $(SRCDIR)/libnetmap
 SRCS=$(notdir $(wildcard $(SRCDIR)/libnetmap/*.c))
