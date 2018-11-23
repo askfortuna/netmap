@@ -47,10 +47,12 @@ struct nmport_d {
 	/* public fields (compatible with nm_open()) */
 	int fd;
 	struct netmap_if *nifp;
-	int first_tx_ring;
-	int last_tx_ring;
-	int first_rx_ring;
-	int last_rx_ring;
+	uint16_t first_tx_ring;
+	uint16_t last_tx_ring;
+	uint16_t first_rx_ring;
+	uint16_t last_rx_ring;
+	uint16_t cur_tx_ring;
+	uint16_t cur_rx_ring;
 };
 
 /* nmctx manipulation */
