@@ -394,6 +394,8 @@ nmport_clone(struct nmport_d *d)
 		return NULL;
 	/* copy the output of parse */
 	c->hdr = d->hdr;
+	/* redirect the pointer to the body */
+	c->hdr.nr_body = (uintptr_t)&c->reg;
 	/* options are not cloned */
 	c->hdr.nr_options = 0;
 	c->reg = d->reg; /* this also copies the mem_id */
