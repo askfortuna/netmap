@@ -32,7 +32,7 @@ nmport_new_with_ctx(struct nmctx *ctx)
 	}
 	memset(d, 0, sizeof(*d));
 	d->ctx = ctx;
-	d->netmap_fd = -1;
+	d->fd = -1;
 
 out:
 	return d;
@@ -174,13 +174,13 @@ nmport_register(struct nmport_d *d)
 		goto err;
 	}
 
-	d->netmap_fd = open("/dev/netmap", O_RDWR);
-	if (d->netmap_fd < 0) {
+	d->fd = open("/dev/netmap", O_RDWR);
+	if (d->fd < 0) {
 		nmctx_ferror(ctx, "/dev/netmap: %s", strerror(errno));
 		goto err;
 	}
 
-	if (ioctl(d->netmap_fd, NIOCCTRL, &d->hdr) < 0) {
+	if (ioctl(d->fd, NIOCCTRL, &d->hdr) < 0) {
 		nmctx_ferror(ctx, "%s: %s", d->hdr.nr_name, strerror(errno));
 		if (d->extmem != NULL && d->extmem->nro_opt.nro_status) {
 			nmctx_ferror(ctx, "failed to allocate extmem: %s",
@@ -201,8 +201,8 @@ err:
 void
 nmport_undo_register(struct nmport_d *d)
 {
-	if (d->netmap_fd >= 0)
-		close(d->netmap_fd);
+	if (d->fd >= 0)
+		close(d->fd);
 	d->register_done = 0;
 }
 
@@ -248,7 +248,7 @@ nmport_mmap(struct nmport_d *d)
 			m->is_extmem = 1;
 		} else {
 			m->mem = mmap(NULL, d->reg.nr_memsize, PROT_READ|PROT_WRITE,
-					MAP_SHARED, d->netmap_fd, 0);
+					MAP_SHARED, d->fd, 0);
 			if (m->mem == MAP_FAILED) {
 				nmctx_ferror(ctx, "mmap: %s", strerror(errno));
 				goto err;

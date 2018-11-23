@@ -33,13 +33,7 @@ struct nmem_d {
 
 struct nmport_d {
 	struct nmctx *ctx;
-	struct nmreq_header hdr;
-	struct nmreq_register reg;
 
-	struct nmport_d *next;
-	struct nmport_d *prev;
-
-	int netmap_fd;
 	struct nmem_d *mem;
 
 	/* status */
@@ -47,11 +41,16 @@ struct nmport_d {
 	int mmap_done;
 	struct nmreq_opt_extmem *extmem;
 
+	/* public fields */
+	struct nmreq_header hdr;
+	struct nmreq_register reg;
+	/* public fields (compatible with nm_open()) */
+	int fd;
 	struct netmap_if *nifp;
-	u_int first_tx_ring;
-	u_int last_tx_ring;
-	u_int first_rx_ring;
-	u_int last_rx_ring;
+	int first_tx_ring;
+	int last_tx_ring;
+	int first_rx_ring;
+	int last_rx_ring;
 };
 
 /* nmctx manipulation */

@@ -387,6 +387,21 @@ nmreq_find_option(struct nmreq_header *h, uint32_t t)
 }
 
 void
+nmreq_remove_option(struct nmreq_header *h, struct nmreq_option *o)
+{
+	uintptr_t *scan;
+
+	for (scan = &h->nr_options; *scan;
+			scan = &((struct nmreq_option *)*scan)->nro_next) {
+		if (*scan == (uintptr_t)o) {
+			*scan = o->nro_next;
+			o->nro_next = 0;
+			break;
+		}
+	}
+}
+
+void
 nmreq_free_options(struct nmreq_header *h)
 {
 	struct nmreq_option *o, *next;
