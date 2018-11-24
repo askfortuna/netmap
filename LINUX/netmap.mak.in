@@ -118,13 +118,13 @@ clean-apps: $(APPS_LIST:%=clean-app-%)
 .PHONY: apps $(APPS_BUILD) install-apps $(APPS_INSTALL)
 define apps_actions
 build-app-$(1):
-	+$(MAKE) -C build-apps/$(1) SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)"
+	+$(MAKE) -C build-apps/$(1) SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 install-app-$(1):
-	$(MAKE) -C build-apps/$(1) install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+	$(MAKE) -C build-apps/$(1) install SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
 
 clean-app-$(1):
-	$(MAKE) -C build-apps/$(1) clean SRCDIR=$(SRCDIR)/..
+	$(MAKE) -C build-apps/$(1) clean SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR)
 endef
 $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 
@@ -132,7 +132,7 @@ $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 	@echo '$($*)'
 
 libnetmap:
-	+$(MAKE) -C build-libnetmap SRCDIR="$(SRCDIR)/.." CC="$(APPS_CC)" LD="$(APPS_LD)"
+	+$(MAKE) -C build-libnetmap SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 ifeq (,$(UTILS))
 utils:
@@ -143,13 +143,13 @@ unitest:
 else
 .PHONY: utils
 utils:
-	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. CC="$(APPS_CC)" LD="$(APPS_LD)" SUBSYS_FLAGS="$(SUBSYS_FLAGS)"
+	+$(MAKE) -C build-utils SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) CC="$(APPS_CC)" LD="$(APPS_LD)" SUBSYS_FLAGS="$(SUBSYS_FLAGS)"
 
 install-utils:
-	$(MAKE) -C build-utils install SRCDIR=$(SRCDIR)/.. DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+	$(MAKE) -C build-utils install SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
 
 clean-utils:
-	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/..
+	$(MAKE) -C build-utils clean SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR)
 
 intest: utils
 	$(SRCDIR)/../utils/randomized_tests
