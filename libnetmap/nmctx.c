@@ -40,10 +40,20 @@ static struct nmctx nmctx_global = {
 	.lock = NULL,
 };
 
+static struct nmctx *nmctx_default = &nmctx_global;
+
 struct nmctx *
 nmctx_get(void)
 {
-	return &nmctx_global;
+	return nmctx_default;
+}
+
+struct nmctx *
+nmctx_set_default(struct nmctx *ctx)
+{
+	struct nmctx *old = nmctx_default;
+	nmctx_default = ctx;
+	return old;
 }
 
 #define MAXERRMSG 1000

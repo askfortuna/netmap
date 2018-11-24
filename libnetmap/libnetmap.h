@@ -44,7 +44,7 @@ struct nmport_d {
 	/* public fields */
 	struct nmreq_header hdr;
 	struct nmreq_register reg;
-	/* public fields (compatible with nm_open()) */
+	/* public fields compatible with nm_open() */
 	int fd;
 	struct netmap_if *nifp;
 	uint16_t first_tx_ring;
@@ -56,7 +56,9 @@ struct nmport_d {
 };
 
 /* nmctx manipulation */
-struct nmctx * nmctx_get(void);
+struct nmctx *nmctx_get(void);
+struct nmctx *nmctx_set_default(struct nmctx *ctx);
+void nmctx_set_threadsafe(void);
 void nmctx_ferror(struct nmctx *, const char *, ...);
 void *nmctx_malloc(struct nmctx *, size_t);
 void nmctx_free(struct nmctx *, void *);
