@@ -43,43 +43,79 @@ nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
 	h->nr_options = (uintptr_t)o;
 }
 
+/*
+ * The syntax for interface names is as follows:
+ *
+ *  scope:vpname[mode]
+ *
+ *  The scope is made up of a prefix, possibly followed by an identifier.
+ *  There can be several kinds of scopes, each selected by a unique prefix.
+ */
+struct nmreq_prefix {
+	const char *prefix;		/* the constant part of the prefix */
+	size_t	    len;		/* its strlen() */
+	uint32_t    flags;
+#define	NR_P_ID		(1U << 0)	/* whether an identifier is needed */
+#define NR_P_SKIP	(1U << 1)	/* whether the scope must be passed to netmap */
+#define NR_P_EMPTYID	(1U << 2)	/* whether an empty identifier is allowed */
+};
+
+#define declprefix(prefix, flags)	{ (prefix), (sizeof(prefix) - 1), (flags) }
+
+static struct nmreq_prefix nmreq_prefixes[] = {
+	declprefix("netmap", NR_P_SKIP),
+	declprefix(NM_BDG_NAME,	NR_P_ID),
+	{ NULL } /* terminate the list */
+};
+
 int
 nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *ctx)
 {
-	int is_vale;
 	const char *scan = NULL;
 	const char *vpname = NULL;
 	const char *pipesep = NULL;
 	u_int namelen;
 	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
 	const char *ifname = *pifname;
+	struct nmreq_prefix *p;
 
-	if (strncmp(ifname, "netmap:", 7) &&
-			strncmp(ifname, NM_BDG_NAME, NM_BDG_NAMSZ)) {
-		nmctx_ferror(ctx, "invalid request '%s' (must begin with 'netmap:' or '" NM_BDG_NAME "')", ifname);
+	scan = ifname;
+	for (p = nmreq_prefixes; p->prefix != NULL; p++) {
+		if (!strncmp(scan, p->prefix, p->len))
+			break;
+	}
+	if (p->prefix == NULL) {
+		nmctx_ferror(ctx, "%s: invalid request, prefix unknown or missing", *pifname);
 		goto fail;
 	}
+	scan += p->len;
 
-	is_vale = (ifname[0] == 'v');
-	if (is_vale) {
-		scan = index(ifname, ':');
-		if (scan == NULL) {
-			nmctx_ferror(ctx, "missing ':' in VALE name '%s'", ifname);
-			goto fail;
-		}
-
-		if (!nm_is_identifier(ifname + NM_BDG_NAMSZ, scan)) {
-			nmctx_ferror(ctx, "invalid VALE bridge name '%.*s'",
-					(scan - ifname - NM_BDG_NAMSZ), ifname + NM_BDG_NAMSZ);
-			goto fail;
-		}
-
-		vpname = ++scan;
-	} else {
-		ifname += 7;
-		scan = ifname;
-		vpname = ifname;
+	vpname = index(scan, ':');
+	if (vpname == NULL) {
+		nmctx_ferror(ctx, "%s: missing ':'", ifname);
+		goto fail;
 	}
+	if (vpname != scan) {
+		/* there is an identifier, can we accept it? */
+		if (!(p->flags & NR_P_ID)) {
+			nmctx_ferror(ctx, "%s: no identifier allowed between '%s' and ':'", *pifname, p->prefix);
+			goto fail;
+		}
+
+		if (!nm_is_identifier(scan, vpname)) {
+			nmctx_ferror(ctx, "%s: invalid identifier '%.*s'", *pifname, vpname - scan, scan);
+			goto fail;
+		}
+	} else {
+		if ((p->flags & NR_P_ID) && !(p->flags & NR_P_EMPTYID)) {
+			nmctx_ferror(ctx, "%s: identifier is missing between '%s' and ':'", *pifname, p->prefix);
+			goto fail;
+		}
+	}
+	++vpname; /* skip the colon */
+	if (p->flags & NR_P_SKIP)
+		ifname = vpname;
+	scan = vpname;
 
 	/* scan for a separator */
 	for (; *scan && !index("-*^/@", *scan); scan++)
@@ -90,18 +126,18 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 		;
 
 	if (!nm_is_identifier(vpname, pipesep)) {
-		nmctx_ferror(ctx, "invalid %sport name '%.*s'", (is_vale ? "VALE " : ""),
+		nmctx_ferror(ctx, "%s: invalid port name '%.*s'", *pifname,
 				pipesep - vpname, vpname);
 		goto fail;
 	}
 	if (pipesep != scan) {
 		pipesep++;
 		if (*pipesep == '\0') {
-			nmctx_ferror(ctx, "invalid empty pipe name '%s'", *pifname);
+			nmctx_ferror(ctx, "%s: invalid empty pipe name", *pifname);
 			goto fail;
 		}
 		if (!nm_is_identifier(pipesep, scan)) {
-			nmctx_ferror(ctx, "invalid pipe name '%.*s'", scan - pipesep, pipesep);
+			nmctx_ferror(ctx, "%s: invalid pipe name '%.*s'", *pifname, scan - pipesep, pipesep);
 			goto fail;
 		}
 	}
@@ -112,7 +148,7 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 		goto fail;
 	}
 	if (namelen == 0) {
-		nmctx_ferror(ctx, "invalid empty port name");
+		nmctx_ferror(ctx, "%s: invalid empty port name", *pifname);
 		goto fail;
 	}
 
