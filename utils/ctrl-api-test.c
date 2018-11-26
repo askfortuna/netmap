@@ -47,6 +47,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <signal.h>
+#include "libnetmap.h"
 
 #ifdef __linux__
 #include <sys/eventfd.h>
@@ -151,6 +152,9 @@ struct TestContext {
 	void *csb;                    /* CSB entries (atok and ktoa) */
 	struct nmreq_option *nr_opt;  /* list of options */
 	sem_t *sem;	/* for thread synchronization */
+
+	struct nmctx *nmctx;
+	const char *ifparse;
 	struct nmport_d *nmport;      /* nmport descriptor from libnetmap */
 };
 
@@ -1629,6 +1633,162 @@ null_port_sync(struct TestContext *ctx)
 	return 0;
 }
 
+struct nmreq_parse_test {
+	const char *ifname;
+	const char *exp_port;
+	const char *exp_suff;
+	int exp_error;
+	uint32_t exp_mode;
+	uint16_t exp_ringid;
+	uint64_t exp_flags;
+};
+
+static struct nmreq_parse_test nmreq_parse_tests[] = {
+	/* err > 0	=> nmreq_header_parse should fail with the given error
+	 * err < 0	=> nrmeq_header_parse should succeed, but nmreq_register_decode should
+	 * 		   fail with error |err|
+	 * err = 0	=> should succeeed
+	 */
+
+	/* a NULL suff means equal to the port spec */
+
+	/*port spec*/			/*port*/	/*suff*/    /*err*/	/*mode*/    /*ringid*/ /*nr_flags*/
+	{ "netmap:eth0",		"eth0",		"",		0, 	NR_REG_ALL_NIC,	0,	0 },
+	{ "netmap:eth0-1",		"eth0",		"",		0, 	NR_REG_ONE_NIC, 1,	0 },
+	{ "netmap:eth0/x",		"eth0",		"",		0, 	NR_REG_ALL_NIC, 0,	NR_EXCLUSIVE },
+	{ "netmap:eth0-2/Tx",		"eth0",		"",		0, 	NR_REG_ONE_NIC, 2,	NR_TX_RINGS_ONLY|NR_EXCLUSIVE },
+	{ "netmap:eth0*",		"eth0",		"",		0, 	NR_REG_NIC_SW,  0,	0 },
+	{ "netmap:eth0^",		"eth0",		"",		0, 	NR_REG_SW,	0,	0 },
+	{ "netmap:eth0@2",		"eth0",	        "",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "netmap:eth0@",		"eth0",	        "@",		-EINVAL,0,		0,	0 },
+	{ "netmap:eth0@xxxxx",		"eth0",	        "@xxxxx",	0,	NR_REG_ALL_NIC,	0,	0 },
+	{ "netmap:",			"",		NULL,		EINVAL, 0,		0,	0 },
+	{ "netmap:^",			"",		NULL,		EINVAL,	0,		0,	0 },
+	{ "netmap:{",			"",		NULL,		EINVAL,	0,		0,	0 },
+	{ "netmap:vale0:0",		NULL,		NULL,		EINVAL,	0,		0,	0 },
+	{ "eth0",			NULL,		NULL,		EINVAL, 0,		0,	0 },
+	{ "vale0:0",			"vale0:0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "valeXXX:YYY",		"valeXXX:YYY",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "netmap:pipe{0",		"pipe{0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "netmap:pipe{in",		"pipe{in",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "vale0:0{0",			"vale0:0{0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "netmap:pipe{1}2",		NULL,		NULL,		EINVAL, 0,		0,	0 },
+	{ "",				NULL,		NULL,		EINVAL, 0,		0,	0 },
+	{ NULL,				NULL,		NULL,		0, 	0,		0,	0 },
+};
+
+static int
+nmreq_hdr_parsing(struct TestContext *ctx,
+		struct nmreq_parse_test *t,
+		struct nmreq_header *hdr)
+{
+	ctx->ifparse = t->ifname;
+
+	printf("nmreq_header: \"%s\"\n", ctx->ifparse);
+	if (nmreq_header_decode(&ctx->ifparse, hdr, ctx->nmctx) < 0) {
+		if (t->exp_error > 0) {
+			if (errno != t->exp_error) {
+				printf("!!! got errno=%d, want %d\n",
+						errno, t->exp_error);
+				return -1;
+			}
+			return 0;
+		}
+		printf ("!!! parse returned 0, but an error was expected\n");
+		return -1;
+	}
+	if (t->exp_error > 0) {
+		printf("!!! nmreq_header_decode returns 0, but error %d was expected\n", t->exp_error);
+		return -1;
+	}
+	if (strcmp(t->exp_port, hdr->nr_name) != 0) {
+		printf("!!! got '%s', want '%s'\n", hdr->nr_name, t->exp_port);
+		return -1;
+	}
+	return 0;
+}
+
+static int
+nmreq_reg_parsing(struct TestContext *ctx,
+		struct nmreq_parse_test *t,
+		struct nmreq_register *reg)
+{
+	printf("nmreq_register: \"%s\"\n", ctx->ifparse);
+	if (nmreq_register_decode(&ctx->ifparse, reg, ctx->nmctx) < 0) {
+		if (t->exp_error < 0) {
+			if (errno != -t->exp_error) {
+				printf("!!! got errno=%d, want %d\n",
+						errno, -t->exp_error);
+				return -1;
+			}
+			return 0;
+		}
+		printf ("!!! parse returned 0, but an error was expected\n");
+		return -1;
+	}
+	if (t->exp_error < 0) {
+		printf("!!! nmreq_register_decode returns 0, but error %d was expected\n", -t->exp_error);
+		return -1;
+	}
+	if (reg->nr_mode != t->exp_mode) {
+		printf("!!! got nr_mode '%d', want '%d'\n", reg->nr_mode, t->exp_mode);
+		return -1;
+	}
+	if (reg->nr_ringid != t->exp_ringid) {
+		printf("!!! got nr_ringid '%d', want '%d'\n", reg->nr_ringid, t->exp_ringid);
+		return -1;
+	}
+	if (reg->nr_flags != t->exp_flags) {
+		printf("!!! got nm_flags '%llx', want '%llx\n", (unsigned long long)reg->nr_flags,
+				(unsigned long long)t->exp_flags);
+		return -1;
+	}
+	return 0;
+}
+
+static void
+nmctx_parsing_error(struct nmctx *ctx, const char *msg)
+{
+	(void)ctx;
+	printf("    got message: %s\n", msg);
+}
+
+static int
+nmreq_parsing(struct TestContext *ctx)
+{
+	struct nmreq_parse_test *t;
+	struct nmreq_header hdr;
+	struct nmreq_register reg;
+	struct nmctx test_nmctx, *nmctx;
+	int ret = 0;
+
+	nmctx = nmctx_get();
+	if (nmctx == NULL) {
+		printf("Failed to aquire nmctx: %s", strerror(errno));
+		return -1;
+	}
+	test_nmctx = *nmctx;
+	test_nmctx.error = nmctx_parsing_error;
+	ctx->nmctx = &test_nmctx;
+	for (t = nmreq_parse_tests; t->ifname != NULL; t++) {
+		const char *exp_suff = t->exp_suff != NULL ?
+			t->exp_suff : t->ifname;
+
+		memset(&hdr, 0, sizeof(hdr));
+		if (nmreq_hdr_parsing(ctx, t, &hdr) < 0) {
+			ret = -1;
+		} else if (t->exp_error <= 0 && nmreq_reg_parsing(ctx, t, &reg) < 0) {
+			ret = -1;
+		}
+		if (strcmp(ctx->ifparse, exp_suff) != 0) {
+			printf("!!! string suffix after parse is '%s', but it should be '%s'\n",
+					ctx->ifparse, exp_suff);
+			return -1;
+		}
+	}
+	return ret;
+}
+
 static void
 usage(const char *prog)
 {
@@ -1692,6 +1852,7 @@ static struct mytest tests[] = {
 	decltest(legacy_regif_extra_bufs),
 	decltest(legacy_regif_extra_bufs_pipe),
 	decltest(legacy_regif_extra_bufs_pipe_vale),
+	decltest(nmreq_parsing),
 };
 
 static void

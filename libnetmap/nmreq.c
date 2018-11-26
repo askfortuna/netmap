@@ -96,6 +96,10 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 	}
 	if (pipesep != scan) {
 		pipesep++;
+		if (*pipesep == '\0') {
+			nmctx_ferror(ctx, "invalid empty pipe name '%s'", *pifname);
+			goto fail;
+		}
 		if (!nm_is_identifier(pipesep, scan)) {
 			nmctx_ferror(ctx, "invalid pipe name '%.*s'", scan - pipesep, pipesep);
 			goto fail;
