@@ -358,6 +358,10 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			break;
 		}
 	}
+	if (p_state == P_MEMID && !*scan) {
+		nmctx_ferror(ctx, "invalid empty mem_id");
+		goto fail;
+	}
 	if (p_state != P_START && p_state != P_RNGSFXOK &&
 	    p_state != P_FLAGSOK && p_state != P_MEMID) {
 		nmctx_ferror(ctx, "unexpected end of request");
