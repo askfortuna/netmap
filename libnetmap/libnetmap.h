@@ -101,7 +101,6 @@ int nmport_parse(struct nmport_d *, const char *);
 int nmport_register(struct nmport_d *);
 int nmport_mmap(struct nmport_d *);
 void nmport_delete(struct nmport_d *);
-void nmport_delete(struct nmport_d *);
 void nmport_undo_parse(struct nmport_d *);
 void nmport_undo_register(struct nmport_d *);
 void nmport_undo_mmap(struct nmport_d *);
