@@ -11,12 +11,15 @@ $(OBJS): libnetmap.h
 libnetmap.a: $(OBJS)
 	$(AR) r $@ $^
 
-.PHONY: clean distclean
+.PHONY: clean distclean install
 clean:
 	rm -f *.o
 
 distclean: clean
 	rm -f libnetmap.a
+
+install:
+	install -D libnetmap.a $(DESTDIR)/$(PREFIX)/lib/libnetmap.a
 
 +%:
 	@echo $*=$($*)

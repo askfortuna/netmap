@@ -89,7 +89,7 @@ $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
 .PHONY: install install-netmap install-apps install-headers install-docs
-install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs
+install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs install-libnetmap
 
 install-netmap:
 	$(MAKE) -C $(KSRC) M=$(BUILDDIR) CONFIG_NETMAP=m $(MOD_LIST) \
@@ -99,7 +99,7 @@ install-netmap:
 		$(if $(MODPATH),INSTALL_MOD_PATH=$(MODPATH)) \
 		modules_install
 
-clean: $(E_DRIVERS:%=clean-%) clean-apps clean-utils
+clean: $(E_DRIVERS:%=clean-%) clean-apps clean-utils clean-libnetmap
 	-@ $(MAKE) -C $(KSRC) M=$(BUILDDIR) clean 2> /dev/null
 
 APPS_LIST=@APPS_LIST@
@@ -134,6 +134,12 @@ $(foreach a,$(APPS_LIST),$(eval $(call apps_actions,$(a))))
 libnetmap:
 	+$(MAKE) -C build-libnetmap SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) CC="$(APPS_CC)" LD="$(APPS_LD)"
 
+clean-libnetmap:
+	+$(MAKE) -C build-libnetmap clean SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR)
+
+install-libnetmap:
+	+$(MAKE) -C build-libnetmap install SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) DESTDIR="$(abspath $(DESTDIR))" PREFIX="$(PREFIX)"
+
 ifeq (,$(UTILS))
 utils:
 install-utils:
@@ -164,6 +170,7 @@ install-headers:
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_user.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_user.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_virt.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_virt.h
 	install -m 0644 -D $(SRCDIR)/../sys/net/netmap_legacy.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/net/netmap_legacy.h
+	install -m 0644 -D $(SRCDIR)/../libnetmap/libnetmap.h $(DESTDIR)/$(INCLUDE_PREFIX)/include/libnetmap.h
 
 MAN_PREFIX := $(INCLUDE_PREFIX)
 
@@ -184,6 +191,7 @@ distclean: clean $(S_DRIVERS:%=distclean-%)
 	if [ -L tests ]; then rm tests; fi
 	rm -rf build-apps
 	rm -rf build-utils
+	rm -rf build-libnetmap
 
 format:
 	clang-format -i -style=file $(shell git ls-files "utils/*.[ch]" "apps/*.[ch]" "extra/*.[ch]" "LINUX/*.[ch]" "WINDOWS/*.[ch]" "sys/*.[ch]")
