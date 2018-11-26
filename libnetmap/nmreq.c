@@ -104,6 +104,10 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 		nmctx_ferror(ctx, "name '%.*s' too long", namelen, ifname);
 		goto fail;
 	}
+	if (namelen == 0) {
+		nmctx_ferror(ctx, "invalid empty port name");
+		goto fail;
+	}
 
 	/* fill the header */
 	memset(h, 0, sizeof(*h));
