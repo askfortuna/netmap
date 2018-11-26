@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -9,15 +10,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <net/netmap_user.h>
-#include "libnetmap.h"
 
+//#define NMREQ_DEBUG
 #ifdef NMREQ_DEBUG
+#define NETMAP_WITH_LIBS
 #define ED(...)	D(__VA_ARGS__)
 #else
 #define ED(...)
-#endif /* NMREQ_DEBUG */
-
 /* an identifier is a possibly empty sequence of alphanum characters and
  * underscores
  */
@@ -32,6 +31,10 @@ nm_is_identifier(const char *s, const char *e)
 
 	return 1;
 }
+#endif /* NMREQ_DEBUG */
+
+#include <net/netmap_user.h>
+#include "libnetmap.h"
 
 void
 nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
@@ -212,7 +215,7 @@ nmreq_opt_extmem_decode(const char **spec, struct nmreq_opt_extmem *e, struct nm
 	}
 	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
 	e->nro_info.nr_memsize = mapsize;
-	ED("mapped %zu bytes at %p from file %s", mapsize, pi, mem_id);
+	ED("mapped %zu bytes at %p from file %s", mapsize, p, mem_id);
 	*spec = mem_id + strlen(mem_id);
 	return 0;
 fail:
