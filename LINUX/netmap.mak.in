@@ -111,13 +111,13 @@ DESTDIR?=@DESTDIR@
 APPS_BUILD=$(APPS_LIST:%=build-app-%)
 APPS_INSTALL=$(APPS_LIST:%=install-app-%)
 
-apps: libnetmap $(APPS_BUILD)
+apps: $(APPS_BUILD)
 install-apps: $(APPS_INSTALL)
 clean-apps: $(APPS_LIST:%=clean-app-%)
 
 .PHONY: apps $(APPS_BUILD) install-apps $(APPS_INSTALL)
 define apps_actions
-build-app-$(1):
+build-app-$(1): libnetmap
 	+$(MAKE) -C build-apps/$(1) SRCDIR=$(SRCDIR)/.. BUILDDIR=$(BUILDDIR) CC="$(APPS_CC)" LD="$(APPS_LD)"
 
 install-app-$(1):
