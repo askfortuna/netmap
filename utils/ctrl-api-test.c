@@ -1656,12 +1656,14 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	 *   	nmreq_register struct in case of success
 	 */
 
-	/* a NULL suff means equal to the port spec */
-
 	/*port spec*/			/*port*/	/*suff*/    /*err*/	/*mode*/    /*ringid*/ /*flags*/
 	{ "netmap:eth0",		"eth0",		"",		0, 	NR_REG_ALL_NIC,	0,	0 },
 	{ "netmap:eth0-1",		"eth0",		"",		0, 	NR_REG_ONE_NIC, 1,	0 },
+	{ "netmap:eth0-",		"eth0",		"-",		-EINVAL,0,		0,	0 },
 	{ "netmap:eth0/x",		"eth0",		"",		0, 	NR_REG_ALL_NIC, 0,	NR_EXCLUSIVE },
+	{ "netmap:eth0/z",		"eth0",		"",		0, 	NR_REG_ALL_NIC, 0,	NR_ZCOPY_MON },
+	{ "netmap:eth0/r",		"eth0",		"",		0, 	NR_REG_ALL_NIC, 0,	NR_MONITOR_RX },
+	{ "netmap:eth0/t",		"eth0",		"",		0, 	NR_REG_ALL_NIC, 0,	NR_MONITOR_TX },
 	{ "netmap:eth0-2/Tx",		"eth0",		"",		0, 	NR_REG_ONE_NIC, 2,	NR_TX_RINGS_ONLY|NR_EXCLUSIVE },
 	{ "netmap:eth0*",		"eth0",		"",		0, 	NR_REG_NIC_SW,  0,	0 },
 	{ "netmap:eth0^",		"eth0",		"",		0, 	NR_REG_SW,	0,	0 },
@@ -1680,11 +1682,13 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	{ "vale0:0",			"vale0:0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "vale:0",			"vale:0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "valeXXX:YYY",		"valeXXX:YYY",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "valeXXX:YYY-4",		"valeXXX:YYY",	"",		0,	NR_REG_ONE_NIC, 4,	0 },
 	{ "netmapXXX:eth0",		NULL,		NULL,		EINVAL,	0,		0,	0 },
 	{ "netmap:14",			"14",		"",		0, 	NR_REG_ALL_NIC,	0,	0 },
 	{ "netmap:eth0&",		NULL,		NULL,		EINVAL, 0,		0,	0 },
 	{ "netmap:pipe{0",		"pipe{0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "netmap:pipe{in",		"pipe{in",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "netmap:pipe{in-7",		"pipe{in",	"",		0,	NR_REG_ONE_NIC, 7,	0 },
 	{ "vale0:0{0",			"vale0:0{0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "netmap:pipe{1}2",		NULL,		NULL,		EINVAL, 0,		0,	0 },
 	{ "",				NULL,		NULL,		EINVAL, 0,		0,	0 },
