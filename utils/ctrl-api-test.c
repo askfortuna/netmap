@@ -1694,7 +1694,7 @@ nmreq_hdr_parsing(struct TestContext *ctx,
 			}
 			return 0;
 		}
-		printf ("!!! parse returned 0, but an error was expected\n");
+		printf ("!!! nmreq_header_decode was expected to succeed, but it failed with error %d\n", errno);
 		return -1;
 	}
 	if (t->exp_error > 0) {
