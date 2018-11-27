@@ -88,7 +88,7 @@ netmap.ko:
 $(foreach d,$(S_DRIVERS),$(eval $(call common_driver,$(d))))
 $(foreach d,$(E_DRIVERS),$(eval $(call external_driver,$(d))))
 
-.PHONY: install install-netmap install-apps install-headers install-docs
+.PHONY: install install-netmap install-apps install-headers install-docs libnetmap
 install: install-netmap $(E_DRIVERS:%=install-%) install-apps install-headers install-docs install-libnetmap
 
 install-netmap:

@@ -676,7 +676,7 @@ int main(int argc, char **argv)
 		return (1);
 	}
 	/* extract the base name */
-	strncpy(glob_arg.base_name, rxport->nmd->hdr.nr_name, MAX_IFNAMELEN-1);
+	strncpy(glob_arg.base_name, rxport->nmd->hdr.nr_name, MAX_IFNAMELEN);
 
 	init_groups();
 
