@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <net/netmap_user.h>
+#define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
 static inline void

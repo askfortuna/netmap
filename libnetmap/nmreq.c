@@ -34,6 +34,7 @@ nm_is_identifier(const char *s, const char *e)
 #endif /* NMREQ_DEBUG */
 
 #include <net/netmap_user.h>
+#define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
 void

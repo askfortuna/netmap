@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <net/netmap_user.h>
 #include <pthread.h>
+#define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
 struct nmctx_pthread {
@@ -32,13 +33,17 @@ nmctx_pthread_lock(struct nmctx *ctx, int lock)
 	}
 }
 
-void
+void __attribute__ ((constructor))
 nmctx_set_threadsafe(void)
 {
 	struct nmctx *old;
+
+	printf("#############################\n");
 
 	pthread_mutex_init(&nmctx_pthreadsafe.mutex, NULL);
 	old = nmctx_set_default(&nmctx_pthreadsafe.up);
 	nmctx_pthreadsafe.up = *old;
 	nmctx_pthreadsafe.up.lock = nmctx_pthread_lock;
 }
+
+int nmctx_threadsafe;

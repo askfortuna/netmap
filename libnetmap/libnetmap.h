@@ -109,4 +109,12 @@ void nmport_undo_mmap(struct nmport_d *);
 /* internal functions */
 void nmreq_free_options(struct nmreq_header *);
 
+static  __attribute__((used)) void libnetmap_init(void)
+{
+#ifndef LIBNETMAP_NOTHREADSAFE
+	extern int nmctx_threadsafe;
+	nmctx_threadsafe = 1;
+#endif /* LIBNETMAP_NOTHREADSAFE */
+}
+
 #endif /* LIBNETMAP_H_ */
