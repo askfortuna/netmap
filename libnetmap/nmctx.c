@@ -22,14 +22,14 @@ nmctx_default_error(struct nmctx *ctx, const char *errmsg)
 static void *
 nmctx_default_malloc(struct nmctx *ctx, size_t sz)
 {
-	(void *)ctx;
+	(void)ctx;
 	return malloc(sz);
 }
 
 static void
 nmctx_default_free(struct nmctx *ctx, void *p)
 {
-	(void *)ctx;
+	(void)ctx;
 	free(p);
 }
 
