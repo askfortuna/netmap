@@ -50,6 +50,14 @@ nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
  *
  *  The scope is made up of a prefix, possibly followed by an identifier.
  *  There can be several kinds of scopes, each selected by a unique prefix.
+ *  Currently defined scopes are:
+ *
+ *  netmap	(no id allowed)
+ *  	the global scope
+ *  vale	(followed by a possibily empty id)
+ *  	the vpname is connected to a VALE switch identified by the id
+ *  	(an empty id selects the default switch)
+ *
  */
 struct nmreq_prefix {
 	const char *prefix;		/* the constant part of the prefix */
@@ -64,7 +72,7 @@ struct nmreq_prefix {
 
 static struct nmreq_prefix nmreq_prefixes[] = {
 	declprefix("netmap", NR_P_SKIP),
-	declprefix(NM_BDG_NAME,	NR_P_ID),
+	declprefix(NM_BDG_NAME,	NR_P_ID|NR_P_EMPTYID),
 	{ NULL } /* terminate the list */
 };
 

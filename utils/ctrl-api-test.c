@@ -1678,6 +1678,7 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	{ "netmap:vale0:0",		NULL,		NULL,		EINVAL,	0,		0,	0 },
 	{ "eth0",			NULL,		NULL,		EINVAL, 0,		0,	0 },
 	{ "vale0:0",			"vale0:0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "vale:0",			"vale:0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "valeXXX:YYY",		"valeXXX:YYY",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "netmapXXX:eth0",		NULL,		NULL,		EINVAL,	0,		0,	0 },
 	{ "netmap:14",			"14",		"",		0, 	NR_REG_ALL_NIC,	0,	0 },
