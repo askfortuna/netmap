@@ -1789,7 +1789,7 @@ nmreq_parsing(struct TestContext *ctx)
 		if (strcmp(ctx->ifparse, exp_suff) != 0) {
 			printf("!!! string suffix after parse is '%s', but it should be '%s'\n",
 					ctx->ifparse, exp_suff);
-			return -1;
+			ret = -1;
 		}
 	}
 	return ret;
