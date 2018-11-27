@@ -345,7 +345,7 @@ nmport_undo_mmap(struct nmport_d *d)
 }
 
 int
-nmport_complete(struct nmport_d *d)
+nmport_open_desc(struct nmport_d *d)
 {
 	if (nmport_register(d) < 0)
 		goto err;
@@ -355,12 +355,12 @@ nmport_complete(struct nmport_d *d)
 
 	return 0;
 err:
-	nmport_undo_complete(d);
+	nmport_undo_open_desc(d);
 	return -1;
 }
 
 void
-nmport_undo_complete(struct nmport_d *d)
+nmport_undo_open_desc(struct nmport_d *d)
 {
 	nmport_undo_mmap(d);
 	nmport_undo_register(d);
@@ -378,7 +378,7 @@ nmport_open(const char *ifname)
 		goto err;
 
 	/* open netmap and register */
-	if (nmport_complete(d) < 0)
+	if (nmport_open_desc(d) < 0)
 		goto err;
 
 	return d;
@@ -393,7 +393,7 @@ nmport_close(struct nmport_d *d)
 {
 	if (d == NULL)
 		return;
-	nmport_undo_complete(d);
+	nmport_undo_open_desc(d);
 	nmport_undo_prepare(d);
 }
 

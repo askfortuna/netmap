@@ -2518,7 +2518,7 @@ start_threads(struct glob_arg *g) {
 					t->nmd->reg.nr_flags |= NETMAP_NO_TX_POLL;
 
 				/* register interface. Override ifname and ringid etc. */
-				if (nmport_complete(t->nmd) < 0) {
+				if (nmport_open_desc(t->nmd) < 0) {
 					nmport_undo_prepare(t->nmd);
 					t->nmd = NULL;
 					return -1;
@@ -3094,7 +3094,7 @@ main(int arc, char **argv)
 		g.nmd->reg.nr_mode = NR_REG_ONE_NIC;
 		g.nmd->reg.nr_ringid = 0;
 	}
-	if (nmport_complete(g.nmd) < 0)
+	if (nmport_open_desc(g.nmd) < 0)
 		goto out;
 	g.main_fd = g.nmd->fd;
 	ND("mapped %luKB at %p", (unsigned long)(g.nmd->req.nr_memsize>>10),

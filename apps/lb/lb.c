@@ -689,7 +689,7 @@ int main(int argc, char **argv)
 
 	rxport->nmd->reg.nr_extra_bufs = glob_arg.extra_bufs;
 
-	if (nmport_complete(rxport->nmd) < 0) {
+	if (nmport_open_desc(rxport->nmd) < 0) {
 		D("cannot open %s", glob_arg.ifname);
 		return (1);
 	}

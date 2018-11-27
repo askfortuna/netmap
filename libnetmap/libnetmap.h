@@ -86,9 +86,9 @@ int nmport_inject(struct nmport_d *d, const void *buf, size_t size);
 
 /* middle level */
 struct nmport_d *nmport_prepare(const char *);
-int nmport_complete(struct nmport_d *d);
+int nmport_open_desc(struct nmport_d *d);
 void nmport_undo_prepare(struct nmport_d *);
-void nmport_undo_complete(struct nmport_d *);
+void nmport_undo_open_desc(struct nmport_d *);
 
 int nmport_extmem_from_file(struct nmport_d *, const char **);
 int nmport_extmem_from_mem(struct nmport_d *, void *, size_t);

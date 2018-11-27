@@ -888,7 +888,7 @@ tlem_main(void *_a)
         return NULL;
     }
     a->pa->reg.nr_flags |= NETMAP_NO_TX_POLL;
-    if (nmport_complete(a->pa) < 0) {
+    if (nmport_open_desc(a->pa) < 0) {
 	ED("cannot open %s", q->prod_ifname);
     }
     a->pb = nmport_open(q->cons_ifname);
