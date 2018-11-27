@@ -1644,15 +1644,21 @@ struct nmreq_parse_test {
 };
 
 static struct nmreq_parse_test nmreq_parse_tests[] = {
-	/* err > 0	=> nmreq_header_parse should fail with the given error
-	 * err < 0	=> nrmeq_header_parse should succeed, but nmreq_register_decode should
-	 * 		   fail with error |err|
-	 * err = 0	=> should succeeed
+	/* port spec is the input. The expected results are as follows:
+	 * - port: what should go into hdr.nr_name
+	 * - suff: the trailing part of the input after parsing (NULL means equal to port spec)
+	 * - err: the expected return value, interpreted as follows
+	 *       err > 0 => nmreq_header_parse should fail with the given error
+	 *       err < 0 => nrmeq_header_parse should succeed, but nmreq_register_decode should
+	 *       		   fail with error |err|
+	 *       err = 0 => should succeeed
+	 * - mode, ringid flags: what should go into the corresponding nr_* fields in the
+	 *   	nmreq_register struct in case of success
 	 */
 
 	/* a NULL suff means equal to the port spec */
 
-	/*port spec*/			/*port*/	/*suff*/    /*err*/	/*mode*/    /*ringid*/ /*nr_flags*/
+	/*port spec*/			/*port*/	/*suff*/    /*err*/	/*mode*/    /*ringid*/ /*flags*/
 	{ "netmap:eth0",		"eth0",		"",		0, 	NR_REG_ALL_NIC,	0,	0 },
 	{ "netmap:eth0-1",		"eth0",		"",		0, 	NR_REG_ONE_NIC, 1,	0 },
 	{ "netmap:eth0/x",		"eth0",		"",		0, 	NR_REG_ALL_NIC, 0,	NR_EXCLUSIVE },
