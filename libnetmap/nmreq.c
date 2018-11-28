@@ -280,26 +280,29 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 	long num;
 	const char *scan = *pifname;
 	int memid_allowed = 1;
+	uint32_t nr_mode;
+	uint16_t nr_ringid = 0;
+	uint16_t nr_mem_id = 0;
+	uint64_t nr_flags = 0;
 
 	/* fill the request */
-	memset(r, 0, sizeof(*r));
 
 	p_state = P_START;
-	r->nr_mode = NR_REG_ALL_NIC; /* default for no suffix */
+	nr_mode = NR_REG_ALL_NIC; /* default for no suffix */
 	while (*scan) {
 		switch (p_state) {
 		case P_START:
 			switch (*scan) {
 			case '^': /* only SW ring */
-				r->nr_mode = NR_REG_SW;
+				nr_mode = NR_REG_SW;
 				p_state = P_RNGSFXOK;
 				break;
 			case '*': /* NIC and SW */
-				r->nr_mode = NR_REG_NIC_SW;
+				nr_mode = NR_REG_NIC_SW;
 				p_state = P_RNGSFXOK;
 				break;
 			case '-': /* one NIC ring pair */
-				r->nr_mode = NR_REG_ONE_NIC;
+				nr_mode = NR_REG_ONE_NIC;
 				p_state = P_GETNUM;
 				break;
 			case '/': /* start of flags */
@@ -339,7 +342,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 						num, NETMAP_RING_MASK);
 				goto fail;
 			}
-			r->nr_ringid = num & NETMAP_RING_MASK;
+			nr_ringid = num & NETMAP_RING_MASK;
 			p_state = P_RNGSFXOK;
 			break;
 		case P_FLAGS:
@@ -351,22 +354,22 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			}
 			switch (*scan) {
 			case 'x':
-				r->nr_flags |= NR_EXCLUSIVE;
+				nr_flags |= NR_EXCLUSIVE;
 				break;
 			case 'z':
-				r->nr_flags |= NR_ZCOPY_MON;
+				nr_flags |= NR_ZCOPY_MON;
 				break;
 			case 't':
-				r->nr_flags |= NR_MONITOR_TX;
+				nr_flags |= NR_MONITOR_TX;
 				break;
 			case 'r':
-				r->nr_flags |= NR_MONITOR_RX;
+				nr_flags |= NR_MONITOR_RX;
 				break;
 			case 'R':
-				r->nr_flags |= NR_RX_RINGS_ONLY;
+				nr_flags |= NR_RX_RINGS_ONLY;
 				break;
 			case 'T':
-				r->nr_flags |= NR_TX_RINGS_ONLY;
+				nr_flags |= NR_TX_RINGS_ONLY;
 				break;
 			default:
 				nmctx_ferror(ctx, "unrecognized flag: '%c'", *scan);
@@ -382,7 +385,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			}
 			if (isdigit(*scan)) {
 				num = strtol(scan, (char **)&scan, 10);
-				r->nr_mem_id = num;
+				nr_mem_id = num;
 				memid_allowed = 0;
 				p_state = P_RNGSFXOK;
 			} else {
@@ -401,7 +404,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 					nmctx_ferror(ctx, "unexpected characters '%s' in mem_id spec", scan);
 					goto fail;
 				}
-				r->nr_mem_id = num;
+				nr_mem_id = num;
 				goto out;
 			}
 			break;
@@ -418,12 +421,17 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 	}
 out:
 	ED("flags: %s %s %s %s %s %s",
-			(r->nr_flags & NR_EXCLUSIVE) ? "EXCLUSIVE" : "",
-			(r->nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",
-			(r->nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
-			(r->nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "",
-			(r->nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
-			(r->nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
+			(nr_flags & NR_EXCLUSIVE) ? "EXCLUSIVE" : "",
+			(nr_flags & NR_ZCOPY_MON) ? "ZCOPY_MON" : "",
+			(nr_flags & NR_MONITOR_TX) ? "MONITOR_TX" : "",
+			(nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "",
+			(nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
+			(nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
+	memset(r, 0, sizeof(*r));
+	r->nr_mode = nr_mode;
+	r->nr_ringid = nr_ringid;
+	r->nr_flags = nr_flags;
+	r->nr_mem_id = nr_mem_id;
 	*pifname = scan;
 	return 0;
 
