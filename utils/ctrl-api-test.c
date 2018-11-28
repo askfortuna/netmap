@@ -1695,12 +1695,26 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	{ NULL,				NULL,		NULL,		0, 	0,		0,	0 },
 };
 
+static void
+randomize(void *dst, size_t n)
+{
+	size_t i;
+	char *dst_ = dst;
+
+	for (i = 0; i < n; i++)
+		dst_[i] = (char)random();
+}
+
 static int
 nmreq_hdr_parsing(struct TestContext *ctx,
 		struct nmreq_parse_test *t,
 		struct nmreq_header *hdr)
 {
-	ctx->ifparse = t->ifname;
+	const char *save;
+	struct nmreq_header orig_hdr;
+
+	save = ctx->ifparse = t->ifname;
+	orig_hdr = *hdr;
 
 	printf("nmreq_header: \"%s\"\n", ctx->ifparse);
 	if (nmreq_header_decode(&ctx->ifparse, hdr, ctx->nmctx) < 0) {
@@ -1708,6 +1722,14 @@ nmreq_hdr_parsing(struct TestContext *ctx,
 			if (errno != t->exp_error) {
 				printf("!!! got errno=%d, want %d\n",
 						errno, t->exp_error);
+				return -1;
+			}
+			if (ctx->ifparse != save) {
+				printf("!!! parse error, but first arg changed\n");
+				return -1;
+			}
+			if (memcmp(&orig_hdr, hdr, sizeof(*hdr))) {
+				printf("!!! parse error, but header changed\n");
 				return -1;
 			}
 			return 0;
@@ -1723,6 +1745,10 @@ nmreq_hdr_parsing(struct TestContext *ctx,
 		printf("!!! got '%s', want '%s'\n", hdr->nr_name, t->exp_port);
 		return -1;
 	}
+	if (hdr->nr_reqtype || hdr->nr_options || hdr->nr_body) {
+		printf("!!! some fields where set that should be zero\n");
+		return -1;
+	}
 	return 0;
 }
 
@@ -1731,12 +1757,27 @@ nmreq_reg_parsing(struct TestContext *ctx,
 		struct nmreq_parse_test *t,
 		struct nmreq_register *reg)
 {
+	const char *save;
+	struct nmreq_register orig_reg;
+
+
+	save = ctx->ifparse;
+	orig_reg = *reg;
+
 	printf("nmreq_register: \"%s\"\n", ctx->ifparse);
 	if (nmreq_register_decode(&ctx->ifparse, reg, ctx->nmctx) < 0) {
 		if (t->exp_error < 0) {
 			if (errno != -t->exp_error) {
 				printf("!!! got errno=%d, want %d\n",
 						errno, -t->exp_error);
+				return -1;
+			}
+			if (ctx->ifparse != save) {
+				printf("!!! parse error, but first arg changed\n");
+				return -1;
+			}
+			if (memcmp(&orig_reg, reg, sizeof(*reg))) {
+				printf("!!! parse error, but nmreq_register changed\n");
 				return -1;
 			}
 			return 0;
@@ -1759,6 +1800,17 @@ nmreq_reg_parsing(struct TestContext *ctx,
 	if (reg->nr_flags != t->exp_flags) {
 		printf("!!! got nm_flags '%llx', want '%llx\n", (unsigned long long)reg->nr_flags,
 				(unsigned long long)t->exp_flags);
+		return -1;
+	}
+	if (reg->nr_offset     ||
+	    reg->nr_memsize    ||
+	    reg->nr_tx_slots   ||
+	    reg->nr_rx_slots   ||
+	    reg->nr_tx_rings   ||
+	    reg->nr_rx_rings   ||
+	    reg->nr_extra_bufs)
+	{
+		printf("!!! some fields where set that should be zero\n");
 		return -1;
 	}
 	return 0;
@@ -1792,7 +1844,8 @@ nmreq_parsing(struct TestContext *ctx)
 		const char *exp_suff = t->exp_suff != NULL ?
 			t->exp_suff : t->ifname;
 
-		memset(&hdr, 0, sizeof(hdr));
+		randomize(&hdr, sizeof(hdr));
+		randomize(&reg, sizeof(reg));
 		if (nmreq_hdr_parsing(ctx, t, &hdr) < 0) {
 			ret = -1;
 		} else if (t->exp_error <= 0 && nmreq_reg_parsing(ctx, t, &reg) < 0) {
