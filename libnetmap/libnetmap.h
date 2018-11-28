@@ -55,26 +55,36 @@ struct nmport_d {
 	uint16_t cur_rx_ring;
 };
 
-/* nmctx manipulation */
-struct nmctx *nmctx_get(void);
-struct nmctx *nmctx_set_default(struct nmctx *ctx);
-void nmctx_set_threadsafe(void);
-void nmctx_ferror(struct nmctx *, const char *, ...);
-void *nmctx_malloc(struct nmctx *, size_t);
-void nmctx_free(struct nmctx *, void *);
-void nmctx_lock(struct nmctx *);
-void nmctx_unlock(struct nmctx *);
+/*
+ * A port open specification (portspec for brevity) has the following syntax
+ * (square brackets delimit optional parts):
+ *
+ *     subsystem:vpname[mode][options]
+ *
+ *  The subsystem is denoted by a prefix, possibly followed by an identifier.
+ *  There can be several kinds of subsystems, each one selected by a unique
+ *  prefix.  Currently defined subsystems are:
+ *
+ *  netmap	(no id allowed)
+ *  	the standard subsystem
+ *  vale	(followed by a possibily empty id)
+ *  	the vpname is connected to a VALE switch identified by the id
+ *  	(an empty id selects the default switch)
+ *
+ *  The "port name" is given by the subsystem:vpname part of the portspec.
+ *
+ *  The vpname has the following syntax:
+ *
+ *     identifier			or
+ *     identifier{identifier		or
+ *     identifier}identifier
+ *
+ *  Identifiers are sequences of alphanumeric characters. The part that begins
+ *  with either '{' or '}', when present, denotes a netmap pipe opened in the
+ *  same memory region of the port named by the first identifier.
+ *
+ */
 
-
-/* nmreq manipulation */
-void nmreq_push_option(struct nmreq_header *, struct nmreq_option *);
-void nmreq_remove_option(struct nmreq_header *, struct nmreq_option *);
-struct nmreq_option *nmreq_find_option(struct nmreq_header *, uint32_t);
-int nmmreq_clone_options(struct nmreq_header *, struct nmreq_header *);
-int nmreq_header_decode(const char **, struct nmreq_header *, struct nmctx *);
-int nmreq_get_mem_id(const char **, struct nmctx *);
-int nmreq_opt_extmem_decode(const char **, struct nmreq_opt_extmem *, struct nmctx *);
-int nmreq_register_decode(const char **, struct nmreq_register *, struct nmctx *);
 
 /* nmport manipulation */
 
@@ -104,6 +114,63 @@ void nmport_delete(struct nmport_d *);
 void nmport_undo_parse(struct nmport_d *);
 void nmport_undo_register(struct nmport_d *);
 void nmport_undo_mmap(struct nmport_d *);
+
+/* nmreq manipulation */
+
+/* nmreq_header_decode - initialize an nmreq_header
+ * @ppspec:	(in/out) pointer to a pointer to the portspec
+ * @hdr:	pointer to the nmreq_header to be initialized
+ * @ctx:	pointer to the nmctx to use (for errors)
+ *
+ * This function fills the @hdr nr_version field with NETMAP_API and the
+ * nr_name field with the port name extracted from *@pifname.  The other fields
+ * of *@hdr are set to zero. The @pifname is updated to point at the first char
+ * past the port name.
+ *
+ * In case of error, -1 is returned with errno set to EINVAL, @pifname is
+ * unchanged, *@hdr is also unchanged, and an error message is sent through
+ * @ctx->error().
+ */
+int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr, struct nmctx *ctx);
+
+/* nmreq_regiter_decode - inizialize an nmreq_register
+ * @pmode:	(in/out) pointer to a pointer to an opening mode
+ * @reg:	pointer to the nmreq_register to be initialized
+ * @ctx:	pointer to the nmctx to use (for errors)
+ *
+ * This function fills the nr_mode, nr_ringid, nr_flags and nr_mem_id fields of
+ * the structure pointed by @reg, according to the opening mode specified by
+ * *@pmode. The other fields of *@reg are set to zero.  The @pmode is updatet
+ * to point at the first char past the opening mode.
+ *
+ * If a '@' is encountered followed by something which is not a number, parsing
+ * stops (without error) and @pmode is left pointing at the '@' char. The
+ * nr_mode, nr_ringid and nr_flags fields are still updated, but nr_mem_id is
+ * set at zero and the interpretation of the '@' field is left to the caller.
+ *
+ * In case of error, -1 is returned with errno set to EINVAL, @pmode is
+ * unchanged, *@reg is also unchanged, and an error message is sent through
+ * @ctx->error().
+ */
+int nmreq_register_decode(const char **pmode, struct nmreq_register *reg, struct nmctx *ctx);
+
+int nmreq_get_mem_id(const char **, struct nmctx *);
+int nmreq_opt_extmem_decode(const char **, struct nmreq_opt_extmem *, struct nmctx *);
+void nmreq_push_option(struct nmreq_header *, struct nmreq_option *);
+void nmreq_remove_option(struct nmreq_header *, struct nmreq_option *);
+struct nmreq_option *nmreq_find_option(struct nmreq_header *, uint32_t);
+
+/* nmctx manipulation */
+struct nmctx *nmctx_get(void);
+struct nmctx *nmctx_set_default(struct nmctx *ctx);
+void nmctx_set_threadsafe(void);
+void nmctx_ferror(struct nmctx *, const char *, ...);
+void *nmctx_malloc(struct nmctx *, size_t);
+void nmctx_free(struct nmctx *, void *);
+void nmctx_lock(struct nmctx *);
+void nmctx_unlock(struct nmctx *);
+
+
 
 
 /* internal functions */

@@ -44,22 +44,6 @@ nmreq_push_option(struct nmreq_header *h, struct nmreq_option *o)
 	h->nr_options = (uintptr_t)o;
 }
 
-/*
- * The syntax for interface names is as follows:
- *
- *  scope:vpname[mode]
- *
- *  The scope is made up of a prefix, possibly followed by an identifier.
- *  There can be several kinds of scopes, each selected by a unique prefix.
- *  Currently defined scopes are:
- *
- *  netmap	(no id allowed)
- *  	the global scope
- *  vale	(followed by a possibily empty id)
- *  	the vpname is connected to a VALE switch identified by the id
- *  	(an empty id selects the default switch)
- *
- */
 struct nmreq_prefix {
 	const char *prefix;		/* the constant part of the prefix */
 	size_t	    len;		/* its strlen() */
