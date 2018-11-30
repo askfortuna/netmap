@@ -10,6 +10,7 @@ typedef void *(*nmctx_malloc_cb)(struct nmctx *,size_t);
 typedef void  (*nmctx_free_cb)(struct nmctx *,void *);
 typedef void  (*nmctx_lock_cb)(struct nmctx *, int);
 
+
 struct nmctx {
 	int verbose;
 	nmctx_error_cb 	error;
@@ -155,6 +156,15 @@ int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr, struct nm
 int nmreq_register_decode(const char **pmode, struct nmreq_register *reg, struct nmctx *ctx);
 
 int nmreq_get_mem_id(const char **, struct nmctx *);
+
+typedef int (*nmreq_opt_parser_cb)(const char *, char *, void *, struct nmctx *);
+
+struct nmreq_opt_parser {
+	const char *key;
+	nmreq_opt_parser_cb parse;
+};
+int nmreq_options_decode(const char *opt, struct nmreq_opt_parser[], int, void *, struct nmctx *);
+
 int nmreq_opt_extmem_decode(const char **, struct nmreq_opt_extmem *, struct nmctx *);
 void nmreq_push_option(struct nmreq_header *, struct nmreq_option *);
 void nmreq_remove_option(struct nmreq_header *, struct nmreq_option *);

@@ -111,7 +111,7 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 	scan = vpname;
 
 	/* scan for a separator */
-	for (; *scan && !index("-*^/@", *scan); scan++)
+	for (; *scan && !index("-*^/@+", *scan); scan++)
 		;
 
 	/* search for possible pipe indicators */
@@ -173,8 +173,6 @@ nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 	struct nmreq_header gh;
 	struct nmreq_port_info_get gb;
 	const char *ifname;
-	int error = -1;
-	int old_verbose;
 
 	errno = 0;
 	ifname = *pifname;
@@ -188,21 +186,13 @@ nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 		nmctx_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
-	old_verbose = ctx->verbose;
-	ctx->verbose = 0; /* silence errors */
 	if (nmreq_header_decode(&ifname, &gh, ctx) < 0) {
-		error = 0; /* not recognized */
 		goto fail;
 	}
-	ctx->verbose = old_verbose;
 	gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 	memset(&gb, 0, sizeof(gb));
 	gh.nr_body = (uintptr_t)&gb;
 	if (ioctl(fd, NIOCCTRL, &gh) < 0) {
-		if (errno == ENOENT || errno == ENXIO) {
-			error = 0;
-			goto fail;
-		}
 		nmctx_ferror(ctx, "cannot get info for '%s': %s", ifname, strerror(errno));
 		goto fail;
 	}
@@ -215,8 +205,7 @@ fail:
 		close(fd);
 	if (!errno)
 		errno = EINVAL;
-	ctx->verbose = old_verbose;
-	return error;
+	return -1;
 }
 
 
@@ -295,6 +284,8 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			case '@': /* start of memid */
 				p_state = P_MEMID;
 				break;
+			case '+': /* escape to options */
+				goto out;
 			default:
 				nmctx_ferror(ctx, "unknown modifier: '%c'", *scan);
 				goto fail;
@@ -309,6 +300,8 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			case '@':
 				p_state = P_MEMID;
 				break;
+			case '+': /* escape to options */
+				goto out;
 			default:
 				nmctx_ferror(ctx, "unexpected character: '%c'", *scan);
 				goto fail;
@@ -331,12 +324,13 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			break;
 		case P_FLAGS:
 		case P_FLAGSOK:
-			if (*scan == '@') {
-				scan++;
-				p_state = P_MEMID;
-				break;
-			}
 			switch (*scan) {
+			case '@':
+				p_state = P_MEMID;
+				scan++;
+				continue;
+			case '+':
+				goto out;
 			case 'x':
 				nr_flags |= NR_EXCLUSIVE;
 				break;
@@ -367,30 +361,14 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 				nmctx_ferror(ctx, "double setting of mem_id");
 				goto fail;
 			}
-			if (isdigit(*scan)) {
-				num = strtol(scan, (char **)&scan, 10);
-				nr_mem_id = num;
-				memid_allowed = 0;
-				p_state = P_RNGSFXOK;
-			} else {
-				ED("non-numeric mem_id '%s'", scan);
-				num = nmreq_get_mem_id(&scan, ctx);
-				switch (num) {
-				case -1:
-					goto fail;
-				case 0:
-					scan--;
-					goto out;
-				default:
-					break;
-				}
-				if (*scan != '\0') {
-					nmctx_ferror(ctx, "unexpected characters '%s' in mem_id spec", scan);
-					goto fail;
-				}
-				nr_mem_id = num;
-				goto out;
-			}
+			num = isdigit(*scan) ?
+				strtol(scan, (char **)&scan, 10) :
+				nmreq_get_mem_id(&scan, ctx);
+			if (num < 0)
+				goto fail;
+			nr_mem_id = num;
+			memid_allowed = 0;
+			p_state = P_RNGSFXOK;
 			break;
 		}
 	}
@@ -423,6 +401,79 @@ fail:
 	if (!errno)
 		errno = EINVAL;
 	return -1;
+}
+
+
+static int
+nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
+		void *token, struct nmctx *ctx)
+{
+	const char *key;
+	char *value;
+	int i;
+
+	key = opt;
+	value = strpbrk(opt, "=");
+	if (value != NULL) {
+		*value = '\0'; /* delimit the key */
+		value++; /* skip the equal sign */
+	}
+	/* find the key */
+	for (i = 0; i < nparsers; i++) {
+		if (!strcmp(key, parsers[i].key))
+			return parsers[i].parse(key, value, token, ctx);
+	}
+	nmctx_ferror(ctx, "unknown option: '%s'", key);
+	errno = EINVAL;
+	return -1;
+}
+
+int
+nmreq_options_decode(const char *opt, struct nmreq_opt_parser parsers[],
+		int nparsers, void *token, struct nmctx *ctx)
+{
+	const char *scan, *opt1;
+	char *w;
+	size_t len;
+	int ret;
+
+	if (*opt == '\0')
+		return 0; /* empty list, OK */
+
+	if (*opt != '+') {
+		nmctx_ferror(ctx, "option list does not start with '+'");
+		errno = EINVAL;
+		return -1;
+	}
+
+	scan = opt;
+	do {
+		scan++; /* skip the plus */
+		opt1 = scan; /* start of option */
+		/* find the end of the option */
+		for ( ; *scan != '\0' && *scan != '+'; scan++)
+			;
+		len = scan - opt1;
+		if (len == 0) {
+			nmctx_ferror(ctx, "invalid empty option");
+			errno = EINVAL;
+			return -1;
+		}
+		w = nmctx_malloc(ctx, len + 1);
+		if (w == NULL) {
+			nmctx_ferror(ctx, "out of memory");
+			errno = ENOMEM;
+			return -1;
+		}
+		memcpy(w, opt1, len);
+		w[len] = '\0';
+		ret = nmreq_option_decode1(w, parsers, nparsers, token, ctx);
+		nmctx_free(ctx, w);
+		if (ret < 0)
+			return -1;
+	} while (*scan != '\0');
+
+	return 0;
 }
 
 struct nmreq_option *

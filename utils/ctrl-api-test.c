@@ -1669,11 +1669,10 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	{ "netmap:eth0^",		"eth0",		"",		0, 	NR_REG_SW,	0,	0 },
 	{ "netmap:eth0@2",		"eth0",	        "",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "netmap:eth0@2/R",		"eth0",	        "",		0,	NR_REG_ALL_NIC, 0,	NR_RX_RINGS_ONLY },
-	{ "netmap:eth0@xxx/R",		"eth0",	        "@xxx/R",	0,	NR_REG_ALL_NIC,	0,	0 },
-	{ "netmap:eth0/R@xxx",		"eth0",	        "@xxx",		0,	NR_REG_ALL_NIC,	0,	NR_RX_RINGS_ONLY },
+	{ "netmap:eth0@netmap:lo/R",	"eth0",	        "",		0,	NR_REG_ALL_NIC,	0,	NR_RX_RINGS_ONLY },
+	{ "netmap:eth0/R@xxx",		"eth0",	        "/R@xxx",	-EINVAL,0,		0,	0 },
 	{ "netmap:eth0@2/R@2",		"eth0",	        "@2/R@2",	-EINVAL,0,		0,	0 },
 	{ "netmap:eth0@",		"eth0",	        "@",		-EINVAL,0,		0,	0 },
-	{ "netmap:eth0@xxxxx",		"eth0",	        "@xxxxx",	0,	NR_REG_ALL_NIC,	0,	0 },
 	{ "netmap:",			"",		NULL,		EINVAL, 0,		0,	0 },
 	{ "netmap:^",			"",		NULL,		EINVAL,	0,		0,	0 },
 	{ "netmap:{",			"",		NULL,		EINVAL,	0,		0,	0 },
@@ -1691,6 +1690,10 @@ static struct nmreq_parse_test nmreq_parse_tests[] = {
 	{ "netmap:pipe{in-7",		"pipe{in",	"",		0,	NR_REG_ONE_NIC, 7,	0 },
 	{ "vale0:0{0",			"vale0:0{0",	"",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "netmap:pipe{1}2",		NULL,		NULL,		EINVAL, 0,		0,	0 },
+	{ "vale0:0+opt", 		"vale0:0",	"+opt",		0,	NR_REG_ALL_NIC, 0,	0 },
+	{ "vale0:0/Tx+opt", 		"vale0:0",	"+opt",		0,	NR_REG_ALL_NIC, 0,	NR_TX_RINGS_ONLY|NR_EXCLUSIVE },
+	{ "vale0:0-3+opt", 		"vale0:0",	"+opt",		0,	NR_REG_ONE_NIC, 3,	0 },
+	{ "vale0:0+", 			"vale0:0",	"+",		0,	NR_REG_ALL_NIC, 0,	0 },
 	{ "",				NULL,		NULL,		EINVAL, 0,		0,	0 },
 	{ NULL,				NULL,		NULL,		0, 	0,		0,	0 },
 };
@@ -1782,7 +1785,7 @@ nmreq_reg_parsing(struct TestContext *ctx,
 			}
 			return 0;
 		}
-		printf ("!!! parse returned 0, but an error was expected\n");
+		printf ("!!! parse failed but it should have succeded\n");
 		return -1;
 	}
 	if (t->exp_error < 0) {

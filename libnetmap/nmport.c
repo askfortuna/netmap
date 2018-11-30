@@ -106,6 +106,21 @@ nmport_undo_extmem(struct nmport_d *d)
 	d->extmem = NULL;
 }
 
+static int
+nmport_extmem_parser(const char *key, char *value, void *token, struct nmctx *ctx)
+{
+	(void)key;
+	(void)ctx;
+	return nmport_extmem_from_file(token, (const char **)&value);
+}
+
+static struct nmreq_opt_parser nmport_opt_parsers[] = {
+	{ "extmem", nmport_extmem_parser }
+};
+
+static int nmport_opt_parsers_n =
+	sizeof(nmport_opt_parsers) / sizeof(nmport_opt_parsers[0]);
+
 int
 nmport_parse(struct nmport_d *d, const char *ifname)
 {
@@ -125,22 +140,10 @@ nmport_parse(struct nmport_d *d, const char *ifname)
 	}
 
 	/* parse the options, if any */
-	while (*scan) {
-		const char optc = *scan++;
-		switch (optc) {
-		case '@':
-			/* we only understand the extmem option for now */
-			if (nmport_extmem_from_file(d, &scan) < 0)
-				goto err;
-			break;
-
-		default:
-			nmctx_ferror(d->ctx, "unexpected characters: '%c%s'",
-					optc, scan);
-			goto err;
-		}
+	if (nmreq_options_decode(scan, nmport_opt_parsers,
+				nmport_opt_parsers_n, d, d->ctx) < 0) {
+		goto err;
 	}
-
 	return 0;
 
 err:
