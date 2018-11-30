@@ -127,9 +127,9 @@ void nmport_undo_mmap(struct nmport_d *);
  * of *@hdr are set to zero. The @pifname is updated to point at the first char
  * past the port name.
  *
- * In case of error, -1 is returned with errno set to EINVAL, @pifname is
- * unchanged, *@hdr is also unchanged, and an error message is sent through
- * @ctx->error().
+ * Returns 0 on success.  In case of error, -1 is returned with errno set to
+ * EINVAL, @pifname is unchanged, *@hdr is also unchanged, and an error message
+ * is sent through @ctx->error().
  */
 int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr, struct nmctx *ctx);
 
@@ -148,9 +148,9 @@ int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr, struct nm
  * nr_mode, nr_ringid and nr_flags fields are still updated, but nr_mem_id is
  * set at zero and the interpretation of the '@' field is left to the caller.
  *
- * In case of error, -1 is returned with errno set to EINVAL, @pmode is
- * unchanged, *@reg is also unchanged, and an error message is sent through
- * @ctx->error().
+ * Returns 0 on success.  In case of error, -1 is returned with errno set to
+ * EINVAL, @pmode is unchanged, *@reg is also unchanged, and an error message
+ * is sent through @ctx->error().
  */
 int nmreq_register_decode(const char **pmode, struct nmreq_register *reg, struct nmctx *ctx);
 
@@ -169,9 +169,6 @@ void *nmctx_malloc(struct nmctx *, size_t);
 void nmctx_free(struct nmctx *, void *);
 void nmctx_lock(struct nmctx *);
 void nmctx_unlock(struct nmctx *);
-
-
-
 
 /* internal functions */
 void nmreq_free_options(struct nmreq_header *);
