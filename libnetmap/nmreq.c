@@ -166,7 +166,7 @@ fail:
  * -1 error
  *  >= 0 mem_id
  */
-int
+int32_t
 nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 {
 	int fd = -1;

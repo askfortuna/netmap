@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <net/netmap_user.h>
 #include <pthread.h>
-#define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
 struct nmctx_pthread {
