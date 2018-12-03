@@ -417,6 +417,7 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 		char *key, *value;
 		char delim;
 		struct nmreq_opt_key *k;
+		size_t vlen;
 
 		key = scan;
 		for ( scan++; *scan != '\0' && *scan != '=' && *scan != ','; scan++)
@@ -439,8 +440,18 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 			;
 		delim1 = *scan;
 		*scan = '\0';
+		vlen = scan - value;
 		scan++;
-		pctx->keys[k->id] = (delim == '=' ? value : key );
+		if (delim == '=') {
+			pctx->keys[k->id] = (vlen ? value : NULL);
+		} else {
+			if (!(k->flags & NMREQ_OPTK_ALLOWEMPTY)) {
+				nmctx_ferror(pctx->ctx, "missing '=value' for key '%s'", key);
+				errno = EINVAL;
+				return -1;
+			}
+			pctx->keys[k->id] = key;
+		}
 	}
 	return 0;
 }

@@ -170,6 +170,8 @@ typedef int (*nmreq_opt_parser_cb)(struct nmreq_parse_ctx *);
 struct nmreq_opt_key {
 	const char *key;
 	int id;
+	unsigned int flags;
+#define NMREQ_OPTK_ALLOWEMPTY 	(1U << 0)
 };
 struct nmreq_opt_parser {
 	const char *prefix;
