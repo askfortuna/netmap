@@ -112,12 +112,59 @@ nmport_extmem_parser(struct nmreq_parse_ctx *pctx)
 	return nmport_extmem_from_file(pctx->token, &pctx->keys[0]);
 }
 
+static int
+nmport_conf_parser(struct nmreq_parse_ctx *pctx)
+{
+	struct nmport_d *d;
+	struct nmctx *ctx;
+
+	d = pctx->token;
+	ctx = d->ctx;
+
+	if (pctx->keys[0] != NULL) {
+		uint16_t nr_rings = atoi(pctx->keys[0]);
+		d->reg.nr_tx_rings = nr_rings;
+		d->reg.nr_rx_rings = nr_rings;
+	}
+	if (pctx->keys[1] != NULL) {
+		uint32_t nr_slots = atoi(pctx->keys[1]);
+		d->reg.nr_tx_slots = nr_slots;
+		d->reg.nr_rx_slots = nr_slots;
+	}
+	if (pctx->keys[2] != NULL) {
+		d->reg.nr_tx_rings = atoi(pctx->keys[2]);
+	}
+	if (pctx->keys[3] != NULL) {
+		d->reg.nr_tx_rings = atoi(pctx->keys[3]);
+	}
+	if (pctx->keys[4] != NULL) {
+		d->reg.nr_tx_slots = atoi(pctx->keys[4]);
+	}
+	if (pctx->keys[5] != NULL) {
+		d->reg.nr_tx_slots = atoi(pctx->keys[5]);
+	}
+}
+
 static struct nmreq_opt_parser nmport_opt_parsers[] = {
 	{
 		.prefix = "extmem",
 		.parse = nmport_extmem_parser,
 		.default_key = 0,
 		.flags = 0,
+	},
+	{
+		.prefix = "conf",
+		.parse = nmport_conf_parser,
+		.default_key = -1,
+		.flags = 0,
+		.keys = {
+			{ "rings",    0 }, /* both tx and rx */
+			{ "slots",    1 }, /*      ""        */
+			{ "tx-rings", 2 },
+			{ "rx-rings", 3 },
+			{ "tx-slots", 4 },
+			{ "rx-slots", 5 }
+		}
 	}
 };
 

@@ -627,10 +627,10 @@ parse_nmr_config(const char* conf, struct nmreq_register *nmr)
 	char *w, *tok;
 	int i, v;
 
-	nmr->nr_tx_rings = nmr->nr_rx_rings = 0;
-	nmr->nr_tx_slots = nmr->nr_rx_slots = 0;
 	if (conf == NULL || ! *conf)
 		return 0;
+	nmr->nr_tx_rings = nmr->nr_rx_rings = 0;
+	nmr->nr_tx_slots = nmr->nr_rx_slots = 0;
 	w = strdup(conf);
 	for (i = 0, tok = strtok(w, ","); tok; i++, tok = strtok(NULL, ",")) {
 		v = atoi(tok);
@@ -2970,6 +2970,7 @@ main(int arc, char **argv)
 			g.options |= OPT_DUMP;
 			break;
 		case 'C':
+			D("WARNING: the 'C' option is deprecated, use the '+conf:' libnetmap option instead");
 			g.nmr_config = strdup(optarg);
 			break;
 		case 'H':
