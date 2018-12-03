@@ -109,7 +109,47 @@ nmport_undo_extmem(struct nmport_d *d)
 static int
 nmport_extmem_parser(struct nmreq_parse_ctx *pctx)
 {
-	return nmport_extmem_from_file(pctx->token, &pctx->keys[0]);
+	struct nmport_d *d;
+	struct nmreq_pools_info *pi;
+	int i;
+
+	d = pctx->token;
+
+	if (nmport_extmem_from_file(d, &pctx->keys[0]) < 0)
+		return -1;
+
+	pi = &d->extmem->nro_info;
+
+	for  (i = 1; i < 7; i++) {
+		const char *k = pctx->keys[i];
+		uint32_t v;
+
+		if (k == NULL)
+			continue;
+
+		v = atoi(k);
+		switch (i) {
+		case 1:
+			pi->nr_if_pool_objtotal = v;
+			break;
+		case 2:
+			pi->nr_if_pool_objsize = v;
+			break;
+		case 3:
+			pi->nr_ring_pool_objtotal = v;
+			break;
+		case 4:
+			pi->nr_ring_pool_objsize = v;
+			break;
+		case 5:
+			pi->nr_buf_pool_objtotal = v;
+			break;
+		case 6:
+			pi->nr_buf_pool_objsize = v;
+			break;
+		}
+	}
+	return 0;
 }
 
 static int
@@ -149,8 +189,17 @@ static struct nmreq_opt_parser nmport_opt_parsers[] = {
 	{
 		.prefix = "extmem",
 		.parse = nmport_extmem_parser,
-		.default_key = 0,
+		.default_key = 0, /* the "file" key */
 		.flags = 0,
+		.keys = {
+			{ "file",	0 },
+			{ "if-num",	1 },
+			{ "if-size",	2 },
+			{ "ring-num",   3 },
+			{ "ring-size",  4 },
+			{ "buf-num",    5 },
+			{ "buf-size",   6 }
+		}
 	},
 	{
 		.prefix = "conf",
