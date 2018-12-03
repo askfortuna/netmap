@@ -405,27 +405,106 @@ fail:
 
 
 static int
+nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
+		struct nmreq_parse_ctx *pctx)
+{
+	char *scan;
+	char delim1;
+
+	scan = body;
+	delim1 = *scan;
+	while (delim1 != '\0') {
+		char *key, *value;
+		char delim;
+		struct nmreq_opt_key *k;
+
+		key = scan;
+		for ( scan++; *scan != '\0' && *scan != '=' && *scan != ','; scan++)
+			;
+		delim = *scan;
+		*scan = '\0';
+		scan++;
+		for (k = p->keys; (k - p->keys) < NMREQ_OPT_MAXKEYS && k->key != NULL;
+				k++) {
+			if (!strcmp(k->key, key))
+				goto found;
+
+		}
+		nmctx_ferror(pctx->ctx, "unknown key: '%s'", key);
+		errno = EINVAL;
+		return -1;
+	found:
+		value = scan;
+		for ( ; *scan != '\0' && *scan != ','; scan++)
+			;
+		delim1 = *scan;
+		*scan = '\0';
+		scan++;
+		pctx->keys[k->id] = (delim == '=' ? value : key );
+	}
+	return 0;
+}
+
+
+static int
 nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
 		void *token, struct nmctx *ctx)
 {
-	const char *key;
-	char *value;
+	struct nmreq_opt_parser *p;
+	const char *prefix;
+	char *scan;
+	char delim;
 	int i;
+	struct nmreq_parse_ctx pctx;
 
-	key = opt;
-	value = strpbrk(opt, "=");
-	if (value != NULL) {
-		*value = '\0'; /* delimit the key */
-		value++; /* skip the equal sign */
-	}
-	/* find the key */
+	prefix = opt;
+	/* find the delimiter */
+	for (scan = opt; *scan != '\0' && *scan != ':' && *scan != '='; scan++)
+		;
+	delim = *scan;
+	*scan = '\0';
+	scan++;
+	/* find the prefix */
 	for (i = 0; i < nparsers; i++) {
-		if (!strcmp(key, parsers[i].key))
-			return parsers[i].parse(key, value, token, ctx);
+		if (!strcmp(prefix, parsers[i].prefix))
+			break;
 	}
-	nmctx_ferror(ctx, "unknown option: '%s'", key);
-	errno = EINVAL;
-	return -1;
+	if (i == nparsers) {
+		nmctx_ferror(ctx, "unknown option: '%s'", prefix);
+		errno = EINVAL;
+		return -1;
+	}
+	p = parsers + i; /* shortcut */
+	/* prepare the parse context */
+	pctx.ctx = ctx;
+	pctx.token = token;
+	for (i = 0; i < NMREQ_OPT_MAXKEYS; i++)
+		pctx.keys[i] = NULL;
+	switch (delim) {
+	case '\0':
+		/* no body */
+		if (!(p->flags & NMREQ_OPTF_ALLOWEMPTY)) {
+			nmctx_ferror(ctx, "syntax error: missing body after '%s'",
+					prefix);
+			errno = EINVAL;
+			return -1;
+		}
+		break;
+	case '=': /* the body goes to the default option key, if any */
+		if (p->default_key < 0 || p->default_key >= NMREQ_OPT_MAXKEYS) {
+			nmctx_ferror(ctx, "syntax error: '=' not valid after '%s'",
+					prefix);
+			errno = EINVAL;
+			return -1;
+		}
+		pctx.keys[p->default_key] = scan;
+		break;
+	case ':': /* parse 'key=value' strings */
+		if (nmreq_option_parsekeys(scan, p, &pctx) < 0)
+			return -1;
+		break;
+	}
+	return p->parse(&pctx);
 }
 
 int

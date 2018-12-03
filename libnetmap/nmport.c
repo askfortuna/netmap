@@ -107,15 +107,18 @@ nmport_undo_extmem(struct nmport_d *d)
 }
 
 static int
-nmport_extmem_parser(const char *key, char *value, void *token, struct nmctx *ctx)
+nmport_extmem_parser(struct nmreq_parse_ctx *pctx)
 {
-	(void)key;
-	(void)ctx;
-	return nmport_extmem_from_file(token, (const char **)&value);
+	return nmport_extmem_from_file(pctx->token, &pctx->keys[0]);
 }
 
 static struct nmreq_opt_parser nmport_opt_parsers[] = {
-	{ "extmem", nmport_extmem_parser }
+	{
+		.prefix = "extmem",
+		.parse = nmport_extmem_parser,
+		.default_key = 0,
+		.flags = 0,
+	}
 };
 
 static int nmport_opt_parsers_n =

@@ -157,11 +157,27 @@ int nmreq_register_decode(const char **pmode, struct nmreq_register *reg, struct
 
 int nmreq_get_mem_id(const char **, struct nmctx *);
 
-typedef int (*nmreq_opt_parser_cb)(const char *, char *, void *, struct nmctx *);
+struct nmreq_parse_ctx {
+	struct nmctx *ctx;
+	void *token;
+#define NMREQ_OPT_MAXKEYS 16
+	const char *keys[NMREQ_OPT_MAXKEYS];
+};
 
-struct nmreq_opt_parser {
+
+typedef int (*nmreq_opt_parser_cb)(struct nmreq_parse_ctx *);
+
+struct nmreq_opt_key {
 	const char *key;
+	int id;
+};
+struct nmreq_opt_parser {
+	const char *prefix;
 	nmreq_opt_parser_cb parse;
+	int default_key;
+	unsigned int flags;
+#define NMREQ_OPTF_ALLOWEMPTY	(1U << 0)
+	struct nmreq_opt_key keys[NMREQ_OPT_MAXKEYS];
 };
 int nmreq_options_decode(const char *opt, struct nmreq_opt_parser[], int, void *, struct nmctx *);
 
