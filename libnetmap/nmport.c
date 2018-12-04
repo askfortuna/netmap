@@ -47,24 +47,47 @@ nmport_delete(struct nmport_d *d)
 }
 
 int
-nmport_extmem_from_file(struct nmport_d *d, const char **scan)
+nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 {
 	struct nmctx *ctx = d->ctx;
+	int fd = -1;
+	off_t mapsize;
+	void *p;
 
+	fd = open(fname, O_RDWR);
+	if (fd < 0) {
+		nmctx_ferror(ctx, "cannot open '%s': %s", fname, strerror(errno));
+		goto fail;
+	}
+	mapsize = lseek(fd, 0, SEEK_END);
+	if (mapsize < 0) {
+		nmctx_ferror(ctx, "failed to obtain filesize of '%s': %s", fname, strerror(errno));
+		goto fail;
+	}
+	p = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) {
+		nmctx_ferror(ctx, "cannot mmap '%s': %s", fname, strerror(errno));
+		goto fail;
+	}
 	d->extmem = nmctx_malloc(ctx, sizeof(*d->extmem));
 	if (d->extmem == NULL) {
 		nmctx_ferror(ctx, "cannot allocate extmem option");
-		goto err;
+		errno = ENOMEM;
+		goto fail;
 	}
 	memset(d->extmem, 0, sizeof(*d->extmem));
+	d->extmem->nro_usrptr = (uintptr_t)p;
+	d->extmem->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	d->extmem->nro_info.nr_memsize = mapsize;
 	nmreq_push_option(&d->hdr, &d->extmem->nro_opt);
-	if (nmreq_opt_extmem_decode(scan, d->extmem, d->ctx) < 0) {
-		goto err;
-	}
+
+	close(fd);
 
 	return 0;
 
-err:
+fail:
+	if (fd >= 0)
+		close(fd);
 	nmport_undo_extmem(d);
 	return -1;
 }
@@ -115,7 +138,7 @@ nmport_extmem_parser(struct nmreq_parse_ctx *pctx)
 
 	d = pctx->token;
 
-	if (nmport_extmem_from_file(d, &pctx->keys[0]) < 0)
+	if (nmport_extmem_from_file(d, pctx->keys[0]) < 0)
 		return -1;
 
 	pi = &d->extmem->nro_info;

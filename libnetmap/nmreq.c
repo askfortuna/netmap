@@ -211,43 +211,6 @@ fail:
 
 
 int
-nmreq_opt_extmem_decode(const char **spec, struct nmreq_opt_extmem *e, struct nmctx *ctx)
-{
-	int fd;
-	off_t mapsize;
-	void *p;
-	const char *mem_id = *spec;
-
-	ED("trying with external memory");
-	fd = open(mem_id, O_RDWR);
-	if (fd < 0) {
-		nmctx_ferror(ctx, "cannot open '%s': %s", mem_id, strerror(errno));
-		goto fail;
-	}
-	mapsize = lseek(fd, 0, SEEK_END);
-	if (mapsize < 0) {
-		nmctx_ferror(ctx, "failed to obtain filesize of '%s': %s", mem_id, strerror(errno));
-		goto fail;
-	}
-	memset(e, 0, sizeof(*e));
-	p = mmap(0, mapsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	e->nro_usrptr = (uintptr_t)p;
-	if (p == MAP_FAILED) {
-		nmctx_ferror(ctx, "cannot mmap '%s': %s", mem_id, strerror(errno));
-		goto fail;
-	}
-	e->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
-	e->nro_info.nr_memsize = mapsize;
-	ED("mapped %zu bytes at %p from file %s", mapsize, p, mem_id);
-	*spec = mem_id + strlen(mem_id);
-	return 0;
-fail:
-	if (fd > 0)
-		close(fd);
-	return -1;
-}
-
-int
 nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmctx *ctx)
 {
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
