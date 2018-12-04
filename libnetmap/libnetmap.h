@@ -201,6 +201,7 @@ struct nmreq_opt_key {
 	int id;
 	unsigned int flags;
 #define NMREQ_OPTK_ALLOWEMPTY 	(1U << 0)
+#define NMREQ_OPTK_NODEFAULT	(1U << 1)
 };
 struct nmreq_opt_parser {
 	const char *prefix;

@@ -408,13 +408,13 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 {
 	char *scan;
 	char delim1;
+	struct nmreq_opt_key *k;
 
 	scan = body;
 	delim1 = *scan;
 	while (delim1 != '\0') {
 		char *key, *value;
 		char delim;
-		struct nmreq_opt_key *k;
 		size_t vlen;
 
 		key = scan;
@@ -455,6 +455,15 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 				return -1;
 			}
 			pctx->keys[k->id] = key;
+		}
+	}
+	/* now check that all no-default keys have been assigned */
+	for (k = p->keys; (k - p->keys) < NMREQ_OPT_MAXKEYS && k->key != NULL; k++) {
+		if ((k->flags & NMREQ_OPTK_NODEFAULT) && pctx->keys[k->id] == NULL) {
+			nmctx_ferror(pctx->ctx, "mandatory key '%s' not assigned",
+					k->key);
+			errno = EINVAL;
+			return -1;
 		}
 	}
 	return 0;

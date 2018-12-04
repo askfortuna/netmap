@@ -196,7 +196,7 @@ static struct nmreq_opt_parser nmport_opt_parsers[] = {
 		.default_key = 0, /* the "file" key */
 		.flags = 0,
 		.keys = {
-			{ "file",	0 },
+			{ "file",	0, 	NMREQ_OPTK_NODEFAULT },
 			{ "if-num",	1 },
 			{ "if-size",	2 },
 			{ "ring-num",   3 },
