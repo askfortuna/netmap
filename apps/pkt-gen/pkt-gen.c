@@ -518,17 +518,12 @@ extract_mac_range(struct mac_range *r)
 static int
 get_if_mtu(const struct glob_arg *g)
 {
-	char ifname[IFNAMSIZ];
 	struct ifreq ifreq;
 	int s, ret;
+	const char *ifname = g->nmd->hdr.nr_name;
 
-	if (!strncmp(g->ifname, "netmap:", 7) && !strchr(g->ifname, '{')
-			&& !strchr(g->ifname, '}')) {
-		/* Parse the interface name and ask the kernel for the
-		 * MTU value. */
-		strncpy(ifname, g->ifname+7, IFNAMSIZ-1);
-		ifname[strcspn(ifname, "-*^{}/@")] = '\0';
-
+	if (!strncmp(ifname, "netmap:", 7) && !strchr(ifname, '{')
+			&& !strchr(ifname, '}')) {
 		s = socket(AF_INET, SOCK_DGRAM, 0);
 		if (s < 0) {
 			D("socket() failed: %s", strerror(errno));

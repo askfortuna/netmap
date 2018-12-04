@@ -37,8 +37,6 @@ nmctx_set_threadsafe(void)
 {
 	struct nmctx *old;
 
-	printf("#############################\n");
-
 	pthread_mutex_init(&nmctx_pthreadsafe.mutex, NULL);
 	old = nmctx_set_default(&nmctx_pthreadsafe.up);
 	nmctx_pthreadsafe.up = *old;
