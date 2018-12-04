@@ -193,7 +193,7 @@ nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 	memset(&gb, 0, sizeof(gb));
 	gh.nr_body = (uintptr_t)&gb;
 	if (ioctl(fd, NIOCCTRL, &gh) < 0) {
-		nmctx_ferror(ctx, "cannot get info for '%s': %s", ifname, strerror(errno));
+		nmctx_ferror(ctx, "cannot get info for '%s': %s", *pifname, strerror(errno));
 		goto fail;
 	}
 	*pifname = ifname;
