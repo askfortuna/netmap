@@ -33,8 +33,8 @@
  * this file.
  */
 
-/* NOTE: we include net/netmap_user.h without defining NETMAP_WITH_LIBS, which is
- * deprecated. If you still need it, please define NETMAP_WITH_LIBS and
+/* NOTE: we include net/netmap_user.h without defining NETMAP_WITH_LIBS, which
+ * is deprecated. If you still need it, please define NETMAP_WITH_LIBS and
  * include net/netmap_user.h before including this file.
  */
 #include <net/netmap_user.h>
@@ -105,14 +105,16 @@ struct nmem_d;
  *  with '*'):
  *
  *  share (single-key)
- *  			open the port in the same memory region used by
- *  			portname (portname must be give in subsystem:vpname
- *  			form)
+ *  			open the port in the same memory region used by the
+ *  			given port name (the port name must be given in
+ *  			subsystem:vpname form)
  *
  *  conf  (multi-key)
  *  			specify the rings/slots numbers (effective only on
  *  			ports that are created by the open operation itself,
- *  			ignore otherwise). The keys are:
+ *  			and ignored otherwise).
+ *
+ *			The keys are:
  *
  *  		       *rings		number of tx and rx rings
  *  			tx-rings	number of tx rings
@@ -128,7 +130,9 @@ struct nmem_d;
  *
  *  extmem (multi-key)
  *			open the port in the memory region obtained by
- *			mmap()ing the given file. The keys are:
+ *			mmap()ing the given file.
+ *
+ *			The keys are:
  *
  *		       *file		the file to mmap
  *			if-num		number of pre-allocated netmap_if's
@@ -232,9 +236,8 @@ int nmport_inject(struct nmport_d *d, const void *buf, size_t size);
 
 /* nmport_new - create a new nmport_d
  *
- * Creates a new nmport_d using the malloc() method
- * of the current default context. Returns NULL on
- * error, setting errno to an error value.
+ * Creates a new nmport_d using the malloc() method of the current default
+ * context. Returns NULL on error, setting errno to an error value.
  */
 struct nmport_d *nmport_new(void);
 
@@ -243,25 +246,25 @@ struct nmport_d *nmport_new(void);
  * @portspec	the port opening specification
  *
  * This function parses the portspec and initizalizes the @d->hdr and @d->reg
- * fields. It may need to allocate a list of options. If an extmem option
- * is found, it may also mmap() the corresponding file.
+ * fields. It may need to allocate a list of options. If an extmem option is
+ * found, it may also mmap() the corresponding file.
  *
- * It returns 0 on success. On failure it returns -1, sets errno to an
- * error value and sends an error message to the error() method of the
- * context used when @d was created. Moreover, *@d is left unchanged.
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
  */
 int nmport_parse(struct nmport_d *d, const char *portspec);
 
 /* nmport_register - registers the port with netmap
  * @d		the nmport to be registered
  *
- * This function obtains a netmap file descriptor and registers the
- * port with netmap. The @d->hdr and @d->reg data structures must have
- * been previously initialized (via nmport_parse() or otherwise).
+ * This function obtains a netmap file descriptor and registers the port with
+ * netmap. The @d->hdr and @d->reg data structures must have been previously
+ * initialized (via nmport_parse() or otherwise).
  *
- * It returns 0 on success. On failure it returns -1, sets errno to an
- * error value and sends an error message to the error() method of the
- * context used when @d was created. Moreover, *@d is left unchanged.
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
  */
 int nmport_register(struct nmport_d *);
 
@@ -270,18 +273,17 @@ int nmport_register(struct nmport_d *);
  *
  * The port must have been previosly been registered using nmport_register.
  *
- * Note that if extmem is used (either via an option or by calling
- * an nmport_extmem_* function before nmport_register()), no new mmap()
- * is issued.
+ * Note that if extmem is used (either via an option or by calling an
+ * nmport_extmem_* function before nmport_register()), no new mmap() is issued.
  *
- * It returns 0 on success. On failure it returns -1, sets errno to an
- * error value and sends an error message to the error() method of the
- * context used when @d was created. Moreover, *@d is left unchanged.
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
  */
 int nmport_mmap(struct nmport_d *);
 
-/* the following functions undo the actions of nmport_new(),
- * nmport_parse(), nmport_register() and nmport_mmap(), respectively.
+/* the following functions undo the actions of nmport_new(), nmport_parse(),
+ * nmport_register() and nmport_mmap(), respectively.
  */
 void nmport_delete(struct nmport_d *);
 void nmport_undo_parse(struct nmport_d *);
@@ -291,26 +293,25 @@ void nmport_undo_mmap(struct nmport_d *);
 /* nmport_prepare - create a port descriptor, but do not open it
  * @portspec	the port opening specification
  *
- * This functions creates a new nmport_d and initializes it according
- * to @portspec. It is equivalent to nmport_new() followed by
- * nmport_parse().
+ * This functions creates a new nmport_d and initializes it according to
+ * @portspec. It is equivalent to nmport_new() followed by nmport_parse().
  *
- * It returns 0 on success. On failure it returns -1, sets errno to an
- * error value and sends an error message to the error() method of the
- * context used when @d was created. Moreover, *@d is left unchanged.
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
  */
 struct nmport_d *nmport_prepare(const char *portspec);
 
 /* nmport_open_desc - open an initialized port descriptor
  * @d		the descriptor we want to open
  *
- * Registers the port with netmap and maps the rings and buffers
- * into the process memory. It is equivalent to nmport_register()
- * followed by nmport_mmap().
+ * Registers the port with netmap and maps the rings and buffers into the
+ * process memory. It is equivalent to nmport_register() followed by
+ * nmport_mmap().
  *
- * It returns 0 on success. On failure it returns -1, sets errno to an
- * error value and sends an error message to the error() method of the
- * context used when @d was created. Moreover, *@d is left unchanged.
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
  */
 int nmport_open_desc(struct nmport_d *d);
 
@@ -328,8 +329,8 @@ void nmport_undo_extmem(struct nmport_d *);
 
 /* nmreq manipulation
  *
- * These functions allow for finer grained parsing of portspecs.
- * They are used internally by nmport_parse().
+ * These functions allow for finer grained parsing of portspecs.  They are used
+ * internally by nmport_parse().
  */
 
 /* nmreq_header_decode - initialize an nmreq_header
@@ -436,13 +437,12 @@ struct nmreq_parse_ctx {
  * @portname	pointer to a pointer to the portname
  * @ctx		pointer to the nmctx to use (for errors)
  *
- * *@portname must point to a substem:vpname porname, possibily followed
- * by something else.
+ * *@portname must point to a substem:vpname porname, possibily followed by
+ * something else.
  *
- * If successful, returns the mem_id of *@portname and moves @portname
- * past the subsystem:vpname part of the input. In case of error it
- * returns -1, sets errno to an error value and sends an error message
- * to ctx->error().
+ * If successful, returns the mem_id of *@portname and moves @portname past the
+ * subsystem:vpname part of the input. In case of error it returns -1, sets
+ * errno to an error value and sends an error message to ctx->error().
  */
 int32_t nmreq_get_mem_id(const char **portname, struct nmctx *ctx);
 
@@ -460,17 +460,17 @@ void nmreq_free_options(struct nmreq_header *);
  *   ports that are using the same region (as identified by the mem_id) will
  *   point to the same nmem_d instance.
  *
- * - allow the user to specifiy how to lock accesses to the above list,
- *   if needed (lock() callback)
+ * - allow the user to specifiy how to lock accesses to the above list, if
+ *   needed (lock() callback)
  *
- * - allow the user to specifiy how error messages should be delivered
- *   (error() callback)
+ * - allow the user to specifiy how error messages should be delivered (error()
+ *   callback)
  *
- * - select the verbosity of the library (verbose field); if verbose==0,
- *   no errors are sent to the error() callback
+ * - select the verbosity of the library (verbose field); if verbose==0, no
+ *   errors are sent to the error() callback
  *
- * - allow the user to override the malloc/free functions used by the
- *   library (malloc() and free() callbacks)
+ * - allow the user to override the malloc/free functions used by the library
+ *   (malloc() and free() callbacks)
  *
  */
 typedef void  (*nmctx_error_cb)(struct nmctx *, const char *);
