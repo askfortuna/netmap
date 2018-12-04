@@ -522,6 +522,11 @@ nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
 			errno = EINVAL;
 			return -1;
 		}
+		if (*scan == '\0') {
+			nmctx_ferror(ctx, "missing value for option '%s'", prefix);
+			errno = EINVAL;
+			return -1;
+		}
 		pctx.keys[p->default_key] = scan;
 		break;
 	case ':': /* parse 'key=value' strings */
