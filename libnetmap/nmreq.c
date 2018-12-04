@@ -217,15 +217,18 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 	long num;
 	const char *scan = *pifname;
 	uint32_t nr_mode;
-	uint16_t nr_ringid = 0;
-	uint16_t nr_mem_id = 0;
-	uint64_t nr_flags = 0;
+	uint16_t nr_mem_id;
+	uint16_t nr_ringid;
+	uint64_t nr_flags;
 
 	/* fill the request */
 
 	p_state = P_START;
+	/* defaults */
 	nr_mode = NR_REG_ALL_NIC; /* default for no suffix */
 	nr_mem_id = r->nr_mem_id; /* if non-zero, further updates are disabled */
+	nr_ringid = 0;
+	nr_flags = 0;
 	while (*scan) {
 		switch (p_state) {
 		case P_START:

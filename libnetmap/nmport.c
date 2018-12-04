@@ -14,14 +14,7 @@
 #define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
-struct nmport_d *
-nmport_new(void)
-{
-	struct nmctx *ctx = nmctx_get();
-	return nmport_new_with_ctx(ctx);
-}
-
-struct nmport_d *
+static struct nmport_d *
 nmport_new_with_ctx(struct nmctx *ctx)
 {
 	struct nmport_d *d;
@@ -39,6 +32,14 @@ nmport_new_with_ctx(struct nmctx *ctx)
 out:
 	return d;
 }
+
+struct nmport_d *
+nmport_new(void)
+{
+	struct nmctx *ctx = nmctx_get();
+	return nmport_new_with_ctx(ctx);
+}
+
 
 void
 nmport_delete(struct nmport_d *d)
