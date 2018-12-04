@@ -3,6 +3,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -107,6 +108,27 @@ nmport_undo_extmem(struct nmport_d *d)
 }
 
 static int
+nmport_share_parser(struct nmreq_parse_ctx *pctx)
+{
+	struct nmctx *ctx = pctx->ctx;
+	struct nmport_d *d = pctx->token;
+	int32_t mem_id;
+	const char *v = pctx->keys[0];
+
+	mem_id = nmreq_get_mem_id(&v, ctx);
+	if (mem_id < 0)
+		return -1;
+	if (d->reg.nr_mem_id && d->reg.nr_mem_id != mem_id) {
+		nmctx_ferror(ctx, "cannot set mem_id to %"PRId32", already set to %"PRIu16"",
+				mem_id, d->reg.nr_mem_id);
+		errno = EINVAL;
+		return -1;
+	}
+	d->reg.nr_mem_id = mem_id;
+	return 0;
+}
+
+static int
 nmport_extmem_parser(struct nmreq_parse_ctx *pctx)
 {
 	struct nmport_d *d;
@@ -186,6 +208,10 @@ nmport_conf_parser(struct nmreq_parse_ctx *pctx)
 }
 
 static struct nmreq_opt_parser nmport_opt_parsers[] = {
+	{
+		.prefix = "share",
+		.parse  = nmport_share_parser,
+	},
 	{
 		.prefix = "extmem",
 		.parse = nmport_extmem_parser,

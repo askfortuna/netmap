@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -111,7 +112,7 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 	scan = vpname;
 
 	/* scan for a separator */
-	for (; *scan && !index("-*^/@+", *scan); scan++)
+	for (; *scan && !index("-*^/@", *scan); scan++)
 		;
 
 	/* search for possible pipe indicators */
@@ -252,7 +253,6 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 	enum { P_START, P_RNGSFXOK, P_GETNUM, P_FLAGS, P_FLAGSOK, P_MEMID } p_state;
 	long num;
 	const char *scan = *pifname;
-	int memid_allowed = 1;
 	uint32_t nr_mode;
 	uint16_t nr_ringid = 0;
 	uint16_t nr_mem_id = 0;
@@ -262,6 +262,7 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 
 	p_state = P_START;
 	nr_mode = NR_REG_ALL_NIC; /* default for no suffix */
+	nr_mem_id = r->nr_mem_id; /* if non-zero, further updates are disabled */
 	while (*scan) {
 		switch (p_state) {
 		case P_START:
@@ -284,8 +285,6 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			case '@': /* start of memid */
 				p_state = P_MEMID;
 				break;
-			case '+': /* escape to options */
-				goto out;
 			default:
 				nmctx_ferror(ctx, "unknown modifier: '%c'", *scan);
 				goto fail;
@@ -300,8 +299,6 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			case '@':
 				p_state = P_MEMID;
 				break;
-			case '+': /* escape to options */
-				goto out;
 			default:
 				nmctx_ferror(ctx, "unexpected character: '%c'", *scan);
 				goto fail;
@@ -329,8 +326,6 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 				p_state = P_MEMID;
 				scan++;
 				continue;
-			case '+':
-				goto out;
 			case 'x':
 				nr_flags |= NR_EXCLUSIVE;
 				break;
@@ -357,17 +352,20 @@ nmreq_register_decode(const char **pifname, struct nmreq_register *r, struct nmc
 			p_state = P_FLAGSOK;
 			break;
 		case P_MEMID:
-			if (!memid_allowed) {
-				nmctx_ferror(ctx, "double setting of mem_id");
+			if (!isdigit(*scan)) {
+				scan--;	/* escape to options */
+				goto out;
+			}
+			num = strtol(scan, (char **)&scan, 10);
+			if (num <= 0) {
+				nmctx_ferror(ctx, "invalid mem_id: '%ld'", num);
 				goto fail;
 			}
-			num = isdigit(*scan) ?
-				strtol(scan, (char **)&scan, 10) :
-				nmreq_get_mem_id(&scan, ctx);
-			if (num < 0)
+			if (nr_mem_id && nr_mem_id != num) {
+				nmctx_ferror(ctx, "invalid setting of mem_id to %ld (already set to %"PRIu16")", num, nr_mem_id);
 				goto fail;
+			}
 			nr_mem_id = num;
-			memid_allowed = 0;
 			p_state = P_RNGSFXOK;
 			break;
 		}
@@ -536,8 +534,8 @@ nmreq_options_decode(const char *opt, struct nmreq_opt_parser parsers[],
 	if (*opt == '\0')
 		return 0; /* empty list, OK */
 
-	if (*opt != '+') {
-		nmctx_ferror(ctx, "option list does not start with '+'");
+	if (*opt != '@') {
+		nmctx_ferror(ctx, "option list does not start with '@'");
 		errno = EINVAL;
 		return -1;
 	}
@@ -547,7 +545,7 @@ nmreq_options_decode(const char *opt, struct nmreq_opt_parser parsers[],
 		scan++; /* skip the plus */
 		opt1 = scan; /* start of option */
 		/* find the end of the option */
-		for ( ; *scan != '\0' && *scan != '+'; scan++)
+		for ( ; *scan != '\0' && *scan != '@'; scan++)
 			;
 		len = scan - opt1;
 		if (len == 0) {
