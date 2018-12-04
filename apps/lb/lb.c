@@ -28,12 +28,13 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <syslog.h>
+#include <unistd.h>
 
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
 #include <libnetmap.h>
 #include <sys/poll.h>
+#include <sys/ioctl.h>
 
 #include <netinet/in.h>		/* htonl */
 

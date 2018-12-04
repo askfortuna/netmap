@@ -1,5 +1,35 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
+ * Copyright (C) 2018 Universita` di Pisa
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *   1. Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
 #ifndef LIBNETMAP_H_
 #define LIBNETMAP_H_
+#include <net/netmap_user.h>
 
 struct nmctx;
 struct nmport_d;
@@ -147,7 +177,7 @@ int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr, struct nm
  * If a '@' is encountered followed by something which is not a number, parsing
  * stops (without error) and @pmode is left pointing at the '@' char. The
  * nr_mode, nr_ringid and nr_flags fields are still updated, but nr_mem_id is
- * set at zero and the interpretation of the '@' field is left to the caller.
+ * not touched and the interpretation of the '@' field is left to the caller.
  *
  * Returns 0 on success.  In case of error, -1 is returned with errno set to
  * EINVAL, @pmode is unchanged, *@reg is also unchanged, and an error message
@@ -163,7 +193,6 @@ struct nmreq_parse_ctx {
 #define NMREQ_OPT_MAXKEYS 16
 	const char *keys[NMREQ_OPT_MAXKEYS];
 };
-
 
 typedef int (*nmreq_opt_parser_cb)(struct nmreq_parse_ctx *);
 

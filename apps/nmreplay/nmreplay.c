@@ -107,10 +107,11 @@
 
 #define _GNU_SOURCE	// for CPU_SET() etc
 #include <stdio.h>
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
 #include <libnetmap.h>
 #include <sys/poll.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include <signal.h>
 
 
 /*

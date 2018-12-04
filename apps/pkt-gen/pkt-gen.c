@@ -39,14 +39,18 @@
 
 #define _GNU_SOURCE	/* for CPU_SET() */
 #include <stdio.h>
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
 #include <libnetmap.h>
 
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <ctype.h>	// isprint()
+#include <string.h>
 #include <unistd.h>	// sysconf()
 #include <sys/poll.h>
+#include <sys/ioctl.h>
+#include <signal.h>
 #include <arpa/inet.h>	/* ntohs */
 #ifndef _WIN32
 #include <sys/sysctl.h>	/* sysctl */
@@ -652,9 +656,7 @@ parse_nmr_config(const char* conf, struct nmreq_register *nmr)
 			nmr->nr_tx_rings, nmr->nr_tx_slots,
 			nmr->nr_rx_rings, nmr->nr_rx_slots);
 	free(w);
-	return (nmr->nr_tx_rings || nmr->nr_tx_slots ||
-		nmr->nr_rx_rings || nmr->nr_rx_slots) ?
-		NM_OPEN_RING_CFG : 0;
+	return 0;
 }
 
 

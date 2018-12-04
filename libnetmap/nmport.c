@@ -14,28 +14,6 @@
 #define LIBNETMAP_NOTHREADSAFE
 #include "libnetmap.h"
 
-static inline void
-nm_pkt_copy(const void *_src, void *_dst, int l)
-{
-	const uint64_t *src = (const uint64_t *)_src;
-	uint64_t *dst = (uint64_t *)_dst;
-
-	if (unlikely(l >= 1024 || l % 64)) {
-		memcpy(dst, src, l);
-		return;
-	}
-	for (; likely(l > 0); l-=64) {
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-		*dst++ = *src++;
-	}
-}
-
 struct nmport_d *
 nmport_new(void)
 {

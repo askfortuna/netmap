@@ -25,9 +25,6 @@
 
 /* $FreeBSD$ */
 
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
-#include <net/netmap.h>
 #define LIBNETMAP_NOTHREADSAFE
 #include <libnetmap.h>
 

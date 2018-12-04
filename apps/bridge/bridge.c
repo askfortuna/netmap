@@ -10,10 +10,12 @@
  */
 
 #include <stdio.h>
-#define NETMAP_WITH_LIBS
-#include <net/netmap_user.h>
-#include <libnetmap.h>
 #include <sys/poll.h>
+#include <sys/ioctl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <libnetmap.h>
 
 int verbose = 0;
 
