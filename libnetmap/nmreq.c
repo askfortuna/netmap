@@ -435,6 +435,12 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 		errno = EINVAL;
 		return -1;
 	found:
+		if (pctx->keys[k->id] != NULL) {
+			nmctx_ferror(pctx->ctx, "duplicate key '%s', already set to '%s'",
+					key, pctx->keys[k->id]);
+			errno = EINVAL;
+			return -1;
+		}
 		value = scan;
 		for ( ; *scan != '\0' && *scan != ','; scan++)
 			;
