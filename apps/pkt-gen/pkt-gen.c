@@ -238,7 +238,8 @@ struct mac_range {
 };
 
 /* ifname can be netmap:foo-xxxx */
-#define MAX_IFNAMELEN	64	/* our buffer for ifname */
+#define MAX_IFNAMELEN	512	/* our buffer for ifname */
+//#define MAX_PKTSIZE	1536
 #define MAX_PKTSIZE	MAX_BODYSIZE	/* XXX: + IP_HDR + ETH_HDR */
 
 /* compact timestamp to fit into 60 byte packet. (enough to obtain RTT) */
