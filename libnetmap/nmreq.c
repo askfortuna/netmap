@@ -403,7 +403,7 @@ fail:
 
 
 static int
-nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
+nmreq_option_parsekeys(const char *prefix, char *body, struct nmreq_opt_parser *p,
 		struct nmreq_parse_ctx *pctx)
 {
 	char *scan;
@@ -434,8 +434,8 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 		return -1;
 	found:
 		if (pctx->keys[k->id] != NULL) {
-			nmctx_ferror(pctx->ctx, "duplicate key '%s', already set to '%s'",
-					key, pctx->keys[k->id]);
+			nmctx_ferror(pctx->ctx, "option '%s': duplicate key '%s', already set to '%s'",
+					prefix, key, pctx->keys[k->id]);
 			errno = EINVAL;
 			return -1;
 		}
@@ -450,7 +450,8 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 			pctx->keys[k->id] = (vlen ? value : NULL);
 		} else {
 			if (!(k->flags & NMREQ_OPTK_ALLOWEMPTY)) {
-				nmctx_ferror(pctx->ctx, "missing '=value' for key '%s'", key);
+				nmctx_ferror(pctx->ctx, "option '%s': missing '=value' for key '%s'",
+						prefix, key);
 				errno = EINVAL;
 				return -1;
 			}
@@ -460,8 +461,8 @@ nmreq_option_parsekeys(char *body, struct nmreq_opt_parser *p,
 	/* now check that all no-default keys have been assigned */
 	for (k = p->keys; (k - p->keys) < NMREQ_OPT_MAXKEYS && k->key != NULL; k++) {
 		if ((k->flags & NMREQ_OPTK_NODEFAULT) && pctx->keys[k->id] == NULL) {
-			nmctx_ferror(pctx->ctx, "mandatory key '%s' not assigned",
-					k->key);
+			nmctx_ferror(pctx->ctx, "option '%s': mandatory key '%s' not assigned",
+					prefix, k->key);
 			errno = EINVAL;
 			return -1;
 		}
@@ -524,7 +525,7 @@ nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
 		pctx.keys[p->default_key] = scan;
 		break;
 	case ':': /* parse 'key=value' strings */
-		if (nmreq_option_parsekeys(scan, p, &pctx) < 0)
+		if (nmreq_option_parsekeys(prefix, scan, p, &pctx) < 0)
 			return -1;
 		break;
 	}
