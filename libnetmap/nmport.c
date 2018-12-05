@@ -48,6 +48,37 @@ nmport_delete(struct nmport_d *d)
 }
 
 int
+nmport_extmem_from_mem(struct nmport_d *d, void *base, size_t size)
+{
+	struct nmctx *ctx = d->ctx;
+
+	if (d->register_done) {
+		nmctx_ferror(ctx, "%s: cannot set extmem of an already registered port", d->hdr.nr_name);
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (d->extmem != NULL) {
+		nmctx_ferror(ctx, "%s: extmem already in use", d->hdr.nr_name);
+		errno = EINVAL;
+		return -1;
+	}
+
+	d->extmem = nmctx_malloc(ctx, sizeof(*d->extmem));
+	if (d->extmem == NULL) {
+		nmctx_ferror(ctx, "%s: cannot allocate extmem option", d->hdr.nr_name);
+		errno = ENOMEM;
+		return -1;
+	}
+	memset(d->extmem, 0, sizeof(*d->extmem));
+	d->extmem->nro_usrptr = (uintptr_t)base;
+	d->extmem->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
+	d->extmem->nro_info.nr_memsize = size;
+	nmreq_push_option(&d->hdr, &d->extmem->nro_opt);
+	return 0;
+}
+
+int
 nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 {
 	struct nmctx *ctx = d->ctx;
@@ -70,17 +101,10 @@ nmport_extmem_from_file(struct nmport_d *d, const char *fname)
 		nmctx_ferror(ctx, "cannot mmap '%s': %s", fname, strerror(errno));
 		goto fail;
 	}
-	d->extmem = nmctx_malloc(ctx, sizeof(*d->extmem));
-	if (d->extmem == NULL) {
-		nmctx_ferror(ctx, "cannot allocate extmem option");
-		errno = ENOMEM;
+	d->extmem_autounmap = 1;
+
+	if (nmport_extmem_from_mem(d, p, mapsize) < 0)
 		goto fail;
-	}
-	memset(d->extmem, 0, sizeof(*d->extmem));
-	d->extmem->nro_usrptr = (uintptr_t)p;
-	d->extmem->nro_opt.nro_reqtype = NETMAP_REQ_OPT_EXTMEM;
-	d->extmem->nro_info.nr_memsize = mapsize;
-	nmreq_push_option(&d->hdr, &d->extmem->nro_opt);
 
 	close(fd);
 
@@ -102,11 +126,12 @@ nmport_undo_extmem(struct nmport_d *d)
 		return;
 
 	p = (void *)d->extmem->nro_usrptr;
-	if (p != MAP_FAILED)
+	if (p != MAP_FAILED && d->extmem_autounmap)
 		munmap(p, d->extmem->nro_info.nr_memsize);
 	nmreq_remove_option(&d->hdr, &d->extmem->nro_opt);
 	nmctx_free(d->ctx, d->extmem);
 	d->extmem = NULL;
+	d->extmem_autounmap = 0;
 }
 
 static int
@@ -567,6 +592,7 @@ nmport_clone(struct nmport_d *d)
 	c->register_done = 0;
 	c->mem = NULL;
 	c->extmem = NULL;
+	c->extmem_autounmap = 0;
 	c->mmap_done = 0;
 	c->first_tx_ring = 0;
 	c->last_tx_ring = 0;

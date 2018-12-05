@@ -92,7 +92,7 @@ struct nmem_d;
  *      option=value				(single key option)
  *      option:key1=value1,key2=value2,...	(multi-key option)
  *
- *  For multi-key options, the keys can be assigned in any oder, but they
+ *  For multi-key options, the keys can be assigned in any order, but they
  *  cannot be assigned more than once. It is not necessary to assign all the
  *  option keys: unmentioned keys will receive default values.  Some multi-key
  *  options define a default key and also accept the single-key syntax, by
@@ -156,7 +156,7 @@ struct nmport_d {
 	struct nmreq_header hdr;
 	struct nmreq_register reg;
 
-	/* the fields below should be considered read-only */
+	/* all the fields below should be considered read-only */
 
 	/* if the same context is used throughout the program, d1->mem ==
 	 * d2->mem iff d1 and d2 are using the memory region (i.e., zero
@@ -164,7 +164,16 @@ struct nmport_d {
 	 */
 	struct nmem_d *mem;
 
-	/* fields compatible with nm_open() */
+	/* the nmctx used when this nmport_d was created */
+	struct nmctx *ctx;
+
+	int register_done;	/* nmport_register() has been called */
+	int mmap_done;		/* nmport_mmap() has been called */
+	/* pointer to the extmem option contained in the hdr options, if any */
+	struct nmreq_opt_extmem *extmem;
+	int extmem_autounmap;	/* 1 if nmport_undo_extmem should also munmap */
+
+	/* the fields below are compatible with nm_open() */
 	int fd;				/* "/dev/netmap", -1 if not open */
 	struct netmap_if *nifp;		/* pointer to the netmap_if */
 	uint16_t first_tx_ring;
@@ -173,11 +182,6 @@ struct nmport_d {
 	uint16_t last_rx_ring;
 	uint16_t cur_tx_ring;		/* used by nmport_inject */
 	uint16_t cur_rx_ring;
-
-	struct nmctx *ctx;
-	int register_done;
-	int mmap_done;
-	struct nmreq_opt_extmem *extmem;
 };
 
 /* nmport_open - opens a port from a portspec
@@ -321,10 +325,69 @@ int nmport_open_desc(struct nmport_d *d);
 void nmport_undo_prepare(struct nmport_d *);
 void nmport_undo_open_desc(struct nmport_d *);
 
+/* nmport_clone - copy an nmport_d
+ * @d		the nmport_d we want to copy
+ *
+ * Copying an nmport_d by hand should be avoided, since adjustments are needed
+ * and some part of the state cannot be easily duplicated. This function
+ * creates a copy of @d in a safe way. The returned nmport_d contains
+ * nmreq_header and nmreq_register structures equivalent to those contained in
+ * @d, except for the option list, which is ignored. The returned nmport_d is
+ * already nmport_prepare()d, but it must still be nmport_open_desc()ed. The
+ * new nmport_d uses the same nmctx as @d.
+ *
+ * If extmem was used for @d, then @d cannot be nmport_clone()d until it has
+ * been nmport_register()ed.
+ *
+ * In case of error, the function returns NULL, sets errno to an error value
+ * and sends an error message to the nmctx error() method.
+ */
 struct nmport_d *nmport_clone(struct nmport_d *);
 
-int nmport_extmem_from_file(struct nmport_d *, const char *);
-int nmport_extmem_from_mem(struct nmport_d *, void *, size_t);
+/* nmport_extmem - use extmem for this port
+ * @d		the port we want to use the extmem for
+ * @base	the base address of the extmem region
+ * @size	the size in bytes of the extmem region
+ *
+ * the memory that contains the netmap ifs, rings and buffers is usually
+ * allocated by netmap and later mmap()ed by the applications. It is sometimes
+ * useful to reverse this process, by having the applications allocate some
+ * memory (through mmap() or otherwise) and then let netmap use it.  The extmem
+ * option can be used to implement this latter strategy. The option can be
+ * passed through the portspec using the '@extmem:...' syntax, or
+ * programmatically by calling nmport_extmem() or nmport_extmem_from_file()
+ * between nmport_parse() and nmport_register() (or between nmport_prepare()
+ * and nmport_open_desc()).
+ *
+ * If @d was already using extmem the function fails. The previous extmem
+ * can be removed with nmport_extmem_undo(), if necessary.
+ *
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
+ */
+int nmport_extmem(struct nmport_d *d, void *base, size_t size);
+
+/* nmport_extmem - use the extmem obtained by mapping a file
+ * @d		the port we want to use the extmem for
+ * @fname	path of the file we want to map
+ *
+ * This works like nmport_extmem, but the extmem memory is obtained
+ * by mmap()ping @fname. netmap_undo_extmem() and nmport_close()
+ * will also automatically munmap() the file.
+ *
+ * It returns 0 on success. On failure it returns -1, sets errno to an error
+ * value and sends an error message to the error() method of the context used
+ * when @d was created. Moreover, *@d is left unchanged.
+ */
+int nmport_extmem_from_file(struct nmport_d *d, const char *fname);
+
+/* nmport_undo_extmem - remove the extmem option, if any
+ * @d		the port we want to remove the extmem from
+ *
+ * Removes the extmem option, if any was used in @d. It also munmap the
+ * extmem region if that was obtained via nmport_extmem_from_file().
+ */
 void nmport_undo_extmem(struct nmport_d *);
 
 /* nmreq manipulation
