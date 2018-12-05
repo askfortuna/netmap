@@ -356,6 +356,7 @@ nmport_undo_register(struct nmport_d *d)
 {
 	if (d->fd >= 0)
 		close(d->fd);
+	d->fd = -1;
 	d->register_done = 0;
 }
 
@@ -473,6 +474,14 @@ nmport_undo_mmap(struct nmport_d *d)
 	}
 	nmctx_unlock(ctx);
 	d->mmap_done = 0;
+	d->mem == NULL;
+	d->nifp = NULL;
+	d->first_tx_ring = 0;
+	d->last_tx_ring = 0;
+	d->first_rx_ring = 0;
+	d->last_rx_ring = 0;
+	d->cur_tx_ring = 0;
+	d->cur_rx_ring = 0;
 }
 
 int
@@ -563,6 +572,8 @@ nmport_clone(struct nmport_d *d)
 	c->last_tx_ring = 0;
 	c->first_rx_ring = 0;
 	c->last_rx_ring = 0;
+	c->cur_tx_ring = 0;
+	c->cur_rx_ring = 0;
 
 	return c;
 }
