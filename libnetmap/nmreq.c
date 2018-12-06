@@ -62,6 +62,15 @@ static struct nmreq_prefix nmreq_prefixes[] = {
 	{ NULL } /* terminate the list */
 };
 
+void
+nmreq_header_init(struct nmreq_header *h, uint16_t reqtype, void *body)
+{
+	memset(h, 0, sizeof(*h));
+	h->nr_version = NETMAP_API;
+	h->nr_reqtype = reqtype;
+	h->nr_body = (uintptr_t)body;
+}
+
 int
 nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *ctx)
 {
@@ -147,8 +156,6 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 	}
 
 	/* fill the header */
-	memset(h, 0, sizeof(*h));
-	h->nr_version = NETMAP_API;
 	memcpy(h->nr_name, ifname, namelen);
 	h->nr_name[namelen] = '\0';
 	ED("name %s", h->nr_name);
@@ -187,12 +194,11 @@ nmreq_get_mem_id(const char **pifname, struct nmctx *ctx)
 		nmctx_ferror(ctx, "cannot open /dev/netmap: %s", strerror(errno));
 		goto fail;
 	}
+	nmreq_header_init(&gh, NETMAP_REQ_PORT_INFO_GET, &gb);
 	if (nmreq_header_decode(&ifname, &gh, ctx) < 0) {
 		goto fail;
 	}
-	gh.nr_reqtype = NETMAP_REQ_PORT_INFO_GET;
 	memset(&gb, 0, sizeof(gb));
-	gh.nr_body = (uintptr_t)&gb;
 	if (ioctl(fd, NIOCCTRL, &gh) < 0) {
 		nmctx_ferror(ctx, "cannot get info for '%s': %s", *pifname, strerror(errno));
 		goto fail;
@@ -353,7 +359,6 @@ out:
 			(nr_flags & NR_MONITOR_RX) ? "MONITOR_RX" : "",
 			(nr_flags & NR_RX_RINGS_ONLY) ? "RX_RINGS_ONLY" : "",
 			(nr_flags & NR_TX_RINGS_ONLY) ? "TX_RINGS_ONLY" : "");
-	memset(r, 0, sizeof(*r));
 	r->nr_mode = nr_mode;
 	r->nr_ringid = nr_ringid;
 	r->nr_flags = nr_flags;

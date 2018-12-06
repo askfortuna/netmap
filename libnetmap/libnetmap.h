@@ -392,6 +392,17 @@ void nmport_undo_extmem(struct nmport_d *);
 
 /* nmreq manipulation
  *
+ * nmreq_header_init - initialize an nmreq_header
+ * @hdr		the nmreq_header to initialize
+ * @reqtype	the kind of netmap request
+ * @body	the body of the request
+ *
+ * Initialize the nr_version, nr_reqtype and nr_body fields of *@hdr.
+ * The other fields are set to zero.
+ */
+void nmreq_header_init(struct nmreq_header *hdr, uint16_t reqtype, void *body);
+
+/*
  * These functions allow for finer grained parsing of portspecs.  They are used
  * internally by nmport_parse().
  */
@@ -401,10 +412,9 @@ void nmport_undo_extmem(struct nmport_d *);
  * @hdr:	pointer to the nmreq_header to be initialized
  * @ctx:	pointer to the nmctx to use (for errors)
  *
- * This function fills the @hdr nr_version field with NETMAP_API and the
- * nr_name field with the port name extracted from *@pifname.  The other fields
- * of *@hdr are set to zero. The @pifname is updated to point at the first char
- * past the port name.
+ * This function fills the @hdr the nr_name field with the port name extracted
+ * from *@pifname.  The other fields of *@hdr are unchanged. The @pifname is
+ * updated to point at the first char past the port name.
  *
  * Returns 0 on success.  In case of error, -1 is returned with errno set to
  * EINVAL, @pifname is unchanged, *@hdr is also unchanged, and an error message
@@ -420,8 +430,8 @@ int nmreq_header_decode(const char **ppspec, struct nmreq_header *hdr,
  *
  * This function fills the nr_mode, nr_ringid, nr_flags and nr_mem_id fields of
  * the structure pointed by @reg, according to the opening mode specified by
- * *@pmode. The other fields of *@reg are set to zero.  The @pmode is updated
- * to point at the first char past the opening mode.
+ * *@pmode. The other fields of *@reg are unchanged.  The @pmode is updated to
+ * point at the first char past the opening mode.
  *
  * If a '@' is encountered followed by something which is not a number, parsing
  * stops (without error) and @pmode is left pointing at the '@' char. The

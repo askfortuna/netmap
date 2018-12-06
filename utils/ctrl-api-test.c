@@ -1749,8 +1749,10 @@ nmreq_hdr_parsing(struct TestContext *ctx,
 		printf("!!! got '%s', want '%s'\n", hdr->nr_name, t->exp_port);
 		return -1;
 	}
-	if (hdr->nr_reqtype || hdr->nr_options || hdr->nr_body) {
-		printf("!!! some fields where set that should be zero\n");
+	if (hdr->nr_reqtype != orig_hdr.nr_reqtype ||
+	    hdr->nr_options != orig_hdr.nr_options ||
+	    hdr->nr_body    != orig_hdr.nr_body) {
+		printf("!!! some fields of the nmreq_header where changed unexpectedly\n");
 		return -1;
 	}
 	return 0;
@@ -1806,15 +1808,15 @@ nmreq_reg_parsing(struct TestContext *ctx,
 				(unsigned long long)t->exp_flags);
 		return -1;
 	}
-	if (reg->nr_offset     ||
-	    reg->nr_memsize    ||
-	    reg->nr_tx_slots   ||
-	    reg->nr_rx_slots   ||
-	    reg->nr_tx_rings   ||
-	    reg->nr_rx_rings   ||
-	    reg->nr_extra_bufs)
+	if (reg->nr_offset     != orig_reg.nr_offset     ||
+	    reg->nr_memsize    != orig_reg.nr_memsize    ||
+	    reg->nr_tx_slots   != orig_reg.nr_tx_slots   ||
+	    reg->nr_rx_slots   != orig_reg.nr_rx_slots   ||
+	    reg->nr_tx_rings   != orig_reg.nr_tx_rings   ||
+	    reg->nr_rx_rings   != orig_reg.nr_rx_rings   ||
+	    reg->nr_extra_bufs != orig_reg.nr_extra_bufs)
 	{
-		printf("!!! some fields where set that should be zero\n");
+		printf("!!! some fields of the nmreq_register where changed unexpectedly\n");
 		return -1;
 	}
 	return 0;

@@ -26,6 +26,9 @@ nmport_new_with_ctx(struct nmctx *ctx)
 		goto out;
 	}
 	memset(d, 0, sizeof(*d));
+
+	nmreq_header_init(&d->hdr, NETMAP_REQ_REGISTER, &d->reg);
+
 	d->ctx = ctx;
 	d->fd = -1;
 
@@ -281,10 +284,6 @@ nmport_parse(struct nmport_d *d, const char *ifname)
 	if (nmreq_header_decode(&scan, &d->hdr, d->ctx) < 0) {
 		goto err;
 	}
-
-	/* specialize the header */
-	d->hdr.nr_reqtype = NETMAP_REQ_REGISTER;
-	d->hdr.nr_body = (uintptr_t)&d->reg;
 
 	/* parse the register request */
 	if (nmreq_register_decode(&scan, &d->reg, d->ctx) < 0) {
