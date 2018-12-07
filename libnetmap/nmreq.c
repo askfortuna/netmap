@@ -78,7 +78,6 @@ nmreq_header_decode(const char **pifname, struct nmreq_header *h, struct nmctx *
 	const char *vpname = NULL;
 	const char *pipesep = NULL;
 	u_int namelen;
-	static size_t NM_BDG_NAMSZ = strlen(NM_BDG_NAME);
 	const char *ifname = *pifname;
 	struct nmreq_prefix *p;
 

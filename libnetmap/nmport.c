@@ -208,10 +208,8 @@ static int
 nmport_conf_parser(struct nmreq_parse_ctx *pctx)
 {
 	struct nmport_d *d;
-	struct nmctx *ctx;
 
 	d = pctx->token;
-	ctx = d->ctx;
 
 	if (pctx->keys[0] != NULL) {
 		uint16_t nr_rings = atoi(pctx->keys[0]);
@@ -235,6 +233,7 @@ nmport_conf_parser(struct nmreq_parse_ctx *pctx)
 	if (pctx->keys[5] != NULL) {
 		d->reg.nr_tx_slots = atoi(pctx->keys[5]);
 	}
+	return 0;
 }
 
 static struct nmreq_opt_parser nmport_opt_parsers[] = {
@@ -498,7 +497,7 @@ nmport_undo_mmap(struct nmport_d *d)
 	}
 	nmctx_unlock(ctx);
 	d->mmap_done = 0;
-	d->mem == NULL;
+	d->mem = NULL;
 	d->nifp = NULL;
 	d->first_tx_ring = 0;
 	d->last_tx_ring = 0;
