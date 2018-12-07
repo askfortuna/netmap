@@ -240,6 +240,7 @@ static struct nmreq_opt_parser nmport_opt_parsers[] = {
 	{
 		.prefix = "share",
 		.parse  = nmport_share_parser,
+		.flags  = 0,
 	},
 	{
 		.prefix = "extmem",
@@ -274,6 +275,38 @@ static struct nmreq_opt_parser nmport_opt_parsers[] = {
 
 static int nmport_opt_parsers_n =
 	sizeof(nmport_opt_parsers) / sizeof(nmport_opt_parsers[0]);
+
+void
+nmport_disable_opt(const char *opt)
+{
+	int i;
+
+	for (i = 0; i < nmport_opt_parsers_n; i++) {
+		struct nmreq_opt_parser *p =
+			nmport_opt_parsers + i;
+		if (!strcmp(p->prefix, opt)) {
+			p->flags |= NMREQ_OPTF_DISABLED;
+		}
+	}
+}
+
+int
+nmport_enable_opt(const char *opt)
+{
+	int i;
+
+	for (i = 0; i < nmport_opt_parsers_n; i++) {
+		struct nmreq_opt_parser *p =
+			nmport_opt_parsers + i;
+		if (!strcmp(p->prefix, opt)) {
+			p->flags &= ~NMREQ_OPTF_DISABLED;
+			return 0;
+		}
+	}
+	errno = EOPNOTSUPP;
+	return -1;
+}
+
 
 int
 nmport_parse(struct nmport_d *d, const char *ifname)

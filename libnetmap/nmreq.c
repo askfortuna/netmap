@@ -470,6 +470,11 @@ nmreq_option_decode1(char *opt, struct nmreq_opt_parser parsers[], int nparsers,
 		return -1;
 	}
 	p = parsers + i; /* shortcut */
+	if (p->flags & NMREQ_OPTF_DISABLED) {
+		nmctx_ferror(ctx, "option '%s' is not supported", prefix);
+		errno = EOPNOTSUPP;
+		return -1;
+	}
 	/* prepare the parse context */
 	pctx.ctx = ctx;
 	pctx.token = token;

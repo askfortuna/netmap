@@ -390,6 +390,22 @@ int nmport_extmem_from_file(struct nmport_d *d, const char *fname);
  */
 void nmport_undo_extmem(struct nmport_d *);
 
+/* enable/disable options
+ *
+ * These functions can be used to disable options that the application cannot
+ * or doesn't want to handle, or to enable options that require special support
+ * from the application and are, therefore, disabled by default. Disabled
+ * options will cause an error if encountered during option parsing.
+ *
+ * If the option is unknown, nmport_disable_option is a NOP, while
+ * nmport_enable_option returns -1 and sets errno to EOPNOTSUPP.
+ *
+ * These functions are not threadsafe and are ment to be used at the beginning
+ * of the program.
+ */
+void nmport_disable_option(const char *opt);
+int nmport_enable_option(const char *opt);
+
 /* nmreq manipulation
  *
  * nmreq_header_init - initialize an nmreq_header
@@ -488,7 +504,8 @@ struct nmreq_opt_parser {
 	int default_key;	/* which option is the default if the
 				   parser is multi-key (-1 if none) */
 	unsigned int flags;
-#define NMREQ_OPTF_ALLOWEMPTY	(1U << 0)	/* =value can be omitted */
+#define NMREQ_OPTF_DISABLED     (1U << 0)
+#define NMREQ_OPTF_ALLOWEMPTY	(1U << 1)	/* =value can be omitted */
 
 	/* recognized keys */
 	struct nmreq_opt_key keys[NMREQ_OPT_MAXKEYS];
