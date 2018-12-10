@@ -388,8 +388,10 @@ nmreq_option_parsekeys(const char *prefix, char *body, struct nmreq_opt_parser *
 		size_t vlen;
 
 		key = scan;
-		for ( scan++; *scan != '\0' && *scan != '=' && *scan != ','; scan++)
-			;
+		for ( scan++; *scan != '\0' && *scan != '=' && *scan != ','; scan++) {
+			if (*scan == '-')
+				*scan = '_';
+		}
 		delim = *scan;
 		*scan = '\0';
 		scan++;
