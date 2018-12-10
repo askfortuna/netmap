@@ -503,13 +503,14 @@ struct nmreq_opt_parser {
 	nmreq_opt_parser_cb parse;	/* the parse callback */
 	int default_key;	/* which option is the default if the
 				   parser is multi-key (-1 if none) */
+	int nr_keys;
 	unsigned int flags;
 #define NMREQ_OPTF_DISABLED     (1U << 0)
 #define NMREQ_OPTF_ALLOWEMPTY	(1U << 1)	/* =value can be omitted */
 
 	/* recognized keys */
 	struct nmreq_opt_key keys[NMREQ_OPT_MAXKEYS];
-};
+} __attribute__((aligned(16)));
 
 /* struct nmreq_parse_ctx - the parse context received by the parse callback */
 struct nmreq_parse_ctx {

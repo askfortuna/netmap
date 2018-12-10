@@ -137,13 +137,65 @@ nmport_undo_extmem(struct nmport_d *d)
 	d->extmem_autounmap = 0;
 }
 
+#define NPOPT_PARSER(o)		nmport_opt_##o##_parser
+#define NPOPT_DESC(o)		nmport_opt_##o##_desc
+#define NPOPT_DECL(o, f, d)						\
+static int NPOPT_PARSER(o)(struct nmreq_parse_ctx *);			\
+static struct nmreq_opt_parser __attribute__((section(".npopts"),used))	\
+	NPOPT_DESC(o) = {						\
+	.prefix = #o,							\
+	.parse = NPOPT_PARSER(o),					\
+	.flags = (f),							\
+	.default_key = (d),						\
+	.nr_keys = 0,							\
+};
+struct nmport_key_desc {
+	struct nmreq_opt_parser *option;
+	const char *key;
+	unsigned int flags;
+	int *id;
+};
+#define NPKEY_ID(o, k)		nmport_opt_##o##_key_##k##_id
+#define NPKEY_DESC(o, k)	nmport_opt_##o##_key_##k##_desc
+#define NPKEY_DECL(o, k, f)						\
+static int NPKEY_ID(o, k);						\
+static struct nmport_key_desc __attribute__((section(".npkeys"),used))	\
+	NPKEY_DESC(o, k) = {						\
+	.option = &NPOPT_DESC(o),					\
+	.key = #k,							\
+	.flags = (f),							\
+	.id = &NPKEY_ID(o, k),						\
+};
+#define nmport_key(p, o, k)	((p)->keys[NPKEY_ID(o, k)])
+#define nmport_defkey(p, o)	((p)->keys[NPOPT_DESC(o).default_key])
+
+NPOPT_DECL(share, 0, 0)
+NPOPT_DECL(extmem, 0, 0)
+	NPKEY_DECL(extmem, file, NMREQ_OPTK_NODEFAULT)
+	NPKEY_DECL(extmem, if_num, 0)
+	NPKEY_DECL(extmem, if_size, 0)
+	NPKEY_DECL(extmem, ring_num, 0)
+	NPKEY_DECL(extmem, ring_size, 0)
+	NPKEY_DECL(extmem, buf_num, 0)
+	NPKEY_DECL(extmem, buf_size, 0)
+NPOPT_DECL(conf, 0, -1)
+	NPKEY_DECL(conf, rings, 0)
+	NPKEY_DECL(conf, slots, 0)
+	NPKEY_DECL(conf, tx_rings, 0)
+	NPKEY_DECL(conf, rx_rings, 0)
+	NPKEY_DECL(conf, tx_slots, 0)
+	NPKEY_DECL(conf, rx_slots, 0)
+
+static struct nmreq_opt_parser *nmport_opt_parsers;
+static int nmport_opt_parsers_n;
+
 static int
-nmport_share_parser(struct nmreq_parse_ctx *pctx)
+NPOPT_PARSER(share)(struct nmreq_parse_ctx *p)
 {
-	struct nmctx *ctx = pctx->ctx;
-	struct nmport_d *d = pctx->token;
+	struct nmctx *ctx = p->ctx;
+	struct nmport_d *d = p->token;
 	int32_t mem_id;
-	const char *v = pctx->keys[0];
+	const char *v = nmport_defkey(p, share);
 
 	mem_id = nmreq_get_mem_id(&v, ctx);
 	if (mem_id < 0)
@@ -159,122 +211,76 @@ nmport_share_parser(struct nmreq_parse_ctx *pctx)
 }
 
 static int
-nmport_extmem_parser(struct nmreq_parse_ctx *pctx)
+NPOPT_PARSER(extmem)(struct nmreq_parse_ctx *p)
 {
 	struct nmport_d *d;
 	struct nmreq_pools_info *pi;
 	int i;
 
-	d = pctx->token;
+	d = p->token;
 
-	if (nmport_extmem_from_file(d, pctx->keys[0]) < 0)
+	if (nmport_extmem_from_file(d, nmport_key(p, extmem, file)) < 0)
 		return -1;
 
 	pi = &d->extmem->nro_info;
 
 	for  (i = 1; i < 7; i++) {
-		const char *k = pctx->keys[i];
+		const char *k = p->keys[i];
 		uint32_t v;
 
 		if (k == NULL)
 			continue;
 
 		v = atoi(k);
-		switch (i) {
-		case 1:
+		if (i == NPKEY_ID(extmem, if_num)) {
 			pi->nr_if_pool_objtotal = v;
-			break;
-		case 2:
+		} else if (i == NPKEY_ID(extmem, if_size)) {
 			pi->nr_if_pool_objsize = v;
-			break;
-		case 3:
+		} else if (i == NPKEY_ID(extmem, ring_num)) {
 			pi->nr_ring_pool_objtotal = v;
-			break;
-		case 4:
+		} else if (i == NPKEY_ID(extmem, ring_size)) {
 			pi->nr_ring_pool_objsize = v;
-			break;
-		case 5:
+		} else if (i == NPKEY_ID(extmem, buf_num)) {
 			pi->nr_buf_pool_objtotal = v;
-			break;
-		case 6:
+		} else if (i == NPKEY_ID(extmem, buf_size)) {
 			pi->nr_buf_pool_objsize = v;
-			break;
 		}
 	}
 	return 0;
 }
 
 static int
-nmport_conf_parser(struct nmreq_parse_ctx *pctx)
+NPOPT_PARSER(conf)(struct nmreq_parse_ctx *p)
 {
 	struct nmport_d *d;
 
-	d = pctx->token;
+	d = p->token;
 
-	if (pctx->keys[0] != NULL) {
-		uint16_t nr_rings = atoi(pctx->keys[0]);
+	if (nmport_key(p, conf, rings) != NULL) {
+		uint16_t nr_rings = atoi(nmport_key(p, conf, rings));
 		d->reg.nr_tx_rings = nr_rings;
 		d->reg.nr_rx_rings = nr_rings;
 	}
-	if (pctx->keys[1] != NULL) {
-		uint32_t nr_slots = atoi(pctx->keys[1]);
+	if (nmport_key(p, conf, slots) != NULL) {
+		uint32_t nr_slots = atoi(nmport_key(p, conf, slots));
 		d->reg.nr_tx_slots = nr_slots;
 		d->reg.nr_rx_slots = nr_slots;
 	}
-	if (pctx->keys[2] != NULL) {
-		d->reg.nr_tx_rings = atoi(pctx->keys[2]);
+	if (nmport_key(p, conf, tx_rings) != NULL) {
+		d->reg.nr_tx_rings = atoi(nmport_key(p, conf, tx_rings));
 	}
-	if (pctx->keys[3] != NULL) {
-		d->reg.nr_tx_rings = atoi(pctx->keys[3]);
+	if (nmport_key(p, conf, rx_rings) != NULL) {
+		d->reg.nr_rx_rings = atoi(nmport_key(p, conf, rx_rings));
 	}
-	if (pctx->keys[4] != NULL) {
-		d->reg.nr_tx_slots = atoi(pctx->keys[4]);
+	if (nmport_key(p, conf, tx_slots) != NULL) {
+		d->reg.nr_tx_slots = atoi(nmport_key(p, conf, tx_slots));
 	}
-	if (pctx->keys[5] != NULL) {
-		d->reg.nr_tx_slots = atoi(pctx->keys[5]);
+	if (nmport_key(p, conf, rx_slots) != NULL) {
+		d->reg.nr_rx_slots = atoi(nmport_key(p, conf, rx_slots));
 	}
 	return 0;
 }
 
-static struct nmreq_opt_parser nmport_opt_parsers[] = {
-	{
-		.prefix = "share",
-		.parse  = nmport_share_parser,
-		.flags  = 0,
-	},
-	{
-		.prefix = "extmem",
-		.parse = nmport_extmem_parser,
-		.default_key = 0, /* the "file" key */
-		.flags = 0,
-		.keys = {
-			{ "file",	0, 	NMREQ_OPTK_NODEFAULT },
-			{ "if-num",	1 },
-			{ "if-size",	2 },
-			{ "ring-num",   3 },
-			{ "ring-size",  4 },
-			{ "buf-num",    5 },
-			{ "buf-size",   6 }
-		}
-	},
-	{
-		.prefix = "conf",
-		.parse = nmport_conf_parser,
-		.default_key = -1,
-		.flags = 0,
-		.keys = {
-			{ "rings",    0 }, /* both tx and rx */
-			{ "slots",    1 }, /*      ""        */
-			{ "tx-rings", 2 },
-			{ "rx-rings", 3 },
-			{ "tx-slots", 4 },
-			{ "rx-slots", 5 }
-		}
-	}
-};
-
-static int nmport_opt_parsers_n =
-	sizeof(nmport_opt_parsers) / sizeof(nmport_opt_parsers[0]);
 
 void
 nmport_disable_opt(const char *opt)
@@ -676,4 +682,26 @@ nmport_inject(struct nmport_d *d, const void *buf, size_t size)
 		return size;
 	}
 	return 0; /* fail */
+}
+
+static void __attribute__((constructor)) nmport_init(void)
+{
+	extern struct nmreq_opt_parser npopts_start, npopts_end;
+	extern struct nmport_key_desc npkeys_start, npkeys_end;
+	struct nmport_key_desc *k;
+
+	nmport_opt_parsers = &npopts_start;
+	nmport_opt_parsers_n = &npopts_end - &npopts_start;
+	for (k = &npkeys_start; k != &npkeys_end; k++) {
+		struct nmreq_opt_parser *o = k->option;
+		struct nmreq_opt_key *ok;
+		int id = o->nr_keys;
+		//printf("key %s of option %s id %d\n", k->key, o->prefix, id);
+		*k->id = id;
+		ok = &o->keys[id];
+		ok->key = k->key;
+		ok->id = id;
+		ok->flags = k->flags;
+		o->nr_keys++;
+	}
 }
