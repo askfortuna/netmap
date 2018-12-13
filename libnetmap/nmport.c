@@ -386,7 +386,7 @@ nmport_register(struct nmport_d *d)
 	if (d->register_done) {
 		errno = EINVAL;
 		nmctx_ferror(ctx, "%s: already registered", d->hdr.nr_name);
-		goto err;
+		return -1;
 	}
 
 	d->fd = open("/dev/netmap", O_RDWR);
